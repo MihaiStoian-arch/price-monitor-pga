@@ -79,7 +79,7 @@ def run_price_monitor(sheet_client):
 
 def run_debug_test():
     """Rulează un test izolat pe codul HJC100528-XS pentru a forța log-urile."""
-    PRODUCT_CODE = 'HJC100528-XS' 
+    PRODUCT_CODE = 'HJC100530-XS' 
 
     print("--- TEST NORDICAMOTO (PYPPETEER) ---")
     try:
