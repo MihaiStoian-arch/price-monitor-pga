@@ -26,7 +26,9 @@ def clean_and_convert_price(price_text):
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
     try:
-        return float(cleaned_price_str)
+        if cleaned_price_str:
+            return float(cleaned_price_str)
+        return None
     except ValueError:
         return None
 
@@ -60,13 +62,24 @@ async def _scrape_moto24_async_search(search_url, product_code):
         
         # PASUL 1: Caută produsul și extrage link-ul
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(3) 
+        await asyncio.sleep(5) 
 
-        # Selector pentru link-ul produsului. Caută un link care conține codul de produs.
-        link_selector = f'a[href*="{product_code.lower()}"]'
+        # Selector robust pentru link-ul produsului în rezultatele căutării WooCommerce
+        # Caută un link 'a' din interiorul unui element cu clasa 'product'
+        link_selector = '.product a'
         
-        # Extrage href-ul primului link găsit care se potrivește
-        product_link = await page.evaluate(f'document.querySelector("{link_selector}") ? document.querySelector("{link_selector}").href : null')
+        # Extrage href-ul primului link de produs găsit
+        product_link = await page.evaluate(f'''
+            const linkElement = document.querySelector('{link_selector}');
+            if (linkElement && linkElement.href.includes('{product_code}')) {{
+                return linkElement.href;
+            }}
+            // Fallback: încearcă primul link de produs
+            if (linkElement) {{
+                return linkElement.href;
+            }}
+            return null;
+        ''')
 
         if not product_link:
             print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Moto24 (Cod: {product_code}).")
@@ -75,16 +88,18 @@ async def _scrape_moto24_async_search(search_url, product_code):
         # PASUL 2: Navighează la link-ul produsului și extrage prețul
         print(f"      Navighez la pagina produsului: {product_link}")
         await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(3) # Așteaptă randarea completă a prețului
+        await asyncio.sleep(5) # Așteaptă randarea completă a prețului
 
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Selectori pentru pagina de produs (mult mai specifici pe structura produsului unic)
+        # Selectori foarte generali pentru preț pe pagina de produs WooCommerce
         price_selectors = [
-            '.single-product-wrapper .woocommerce-Price-amount', 
-            '.product-info-wrap .price',                        
-            '.summary .price',                                  
+            '.single-product-wrapper .woocommerce-Price-amount', # Specific pentru WooCommerce
+            '.price ins .amount',                               # Preț cu reducere (ins)
+            '.price > .amount',                                 # Preț standard
+            'p.price',                                          # Tag-ul de preț
+            '.summary .price',                                  # General wrapper
         ]
         
         price_element = None
