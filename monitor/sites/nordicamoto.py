@@ -10,18 +10,12 @@ def clean_and_convert_price(price_text):
     
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     
-    # 1. Eliminăm spațiile
     price_text = price_text.replace(' ', '')
     
-    # 2. Dacă conține și punct și virgulă, eliminăm punctele (separator de mii)
     if price_text.count('.') > 0 and price_text.count(',') > 0:
-        # Ex: 1.234,50 -> 1234,50
         price_text = price_text.replace('.', '')
         
-    # 3. Standardizăm separatorul zecimal la punct (Ex: 1234,50 -> 1234.50)
     cleaned_price_str = price_text.replace(',', '.')
-    
-    # 4. Eliminăm orice alt caracter non-numeric sau non-punct
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
     try:
@@ -39,7 +33,6 @@ def scrape_nordicamoto_search(product_code):
     if not product_code:
         return None
 
-    # URL-ul de căutare
     search_url = f"https://www.nordicamoto.ro/?s={product_code}"
     
     try:
@@ -49,16 +42,20 @@ def scrape_nordicamoto_search(product_code):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # PASUL 1: Caută produsul și extrage link-ul
+        # PASUL 1: Caută produsul și extrage link-ul (Simplificat: ia primul produs)
         response_search = requests.get(search_url, headers=headers, timeout=10)
         response_search.raise_for_status()
         soup_search = BeautifulSoup(response_search.content, 'html.parser')
 
-        # Selector robust pentru link-ul produsului
-        product_link_element = soup_search.select_one(f'.products a[href*="{product_code.lower()}"]')
+        # Selector generic pentru link-ul primului produs
+        product_link_element = soup_search.select_one('.products a.woocommerce-LoopProduct-link')
         
         if not product_link_element:
-            print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Nordicamoto (Cod: {product_code}).")
+            # Fallback: încearcă orice link dintr-un card de produs
+            product_link_element = soup_search.select_one('.product a')
+
+        if not product_link_element:
+            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
             return None
 
         product_url = product_link_element.get('href')
@@ -70,13 +67,13 @@ def scrape_nordicamoto_search(product_code):
         response_product.raise_for_status()
         soup_product = BeautifulSoup(response_product.content, 'html.parser')
         
-        # Selectori pentru pagina de produs (foarte robuști pe WooCommerce)
+        # Selectori ULTRA-ROBUȘTI pentru pagina de produs
         price_selectors = [
-            '.summary .woocommerce-Price-amount', # Cel mai specific în zona de summary
-            '.product-info .price',              # Wrapper general
-            'p.price',                           # Tag-ul de preț
-            '.price .amount',                    # Clasa amount
-            '.summary .price .amount',           # Combinație
+            '.summary .woocommerce-Price-amount', 
+            '.product-info .price',                   
+            'p.price',                           
+            '.price .amount',                    
+            '[itemprop="price"]', 
         ]
         
         price_element = None
