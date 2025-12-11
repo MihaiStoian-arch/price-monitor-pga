@@ -33,7 +33,7 @@ def scrape_moto24_search(product_code):
         print(f"❌ EROARE GENERALĂ la Moto24 (Wrapper/Async): {e}")
         return None
 
-# FUNCTIA ASINCRONĂ PRINCIPALĂ
+# FUNCTIA ASINCRONĂ PRINCIPALĂ (MOTO24 - Redirecționare directă)
 async def _scrape_moto24_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
     browser = None
@@ -45,57 +45,36 @@ async def _scrape_moto24_async_search(search_url, product_code):
         page = await browser.newPage()
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # PASUL 1: Caută produsul și extrage link-ul
+        # PASUL 1: Navighează la URL-ul de căutare. 
+        # Dacă există, site-ul ar trebui să redirecționeze automat la pagina produsului.
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Logica de căutare a link-ului (V10: Selector specific Moto24 Elastic Search)
-        product_link = await page.evaluate('''
-            (code) => {
-                const codeUpper = code.toUpperCase();
-                
-                // 1. Selector care vizează link-ul din TITLUL primului produs
-                const productTitleLink = document.querySelector('.wkelasticsearchlist-product-container:first-child .product-name a[href]');
-                
-                if (productTitleLink) {
-                    return productTitleLink.href;
-                }
-                
-                // 2. Fallback: Caută link-ul principal al întregului card de produs
-                const productCardLink = document.querySelector('.wkelasticsearchlist-product-container:first-child a.product_img_link[href]');
-
-                if (productCardLink) {
-                    return productCardLink.href;
-                }
-
-                // Verificăm dacă pagina de căutare este goală
-                const noResults = document.querySelector('.alert.alert-warning, .no-results, .wk_search_list:empty, .no-products'); 
-                if (noResults) {
-                    return "NO_RESULTS_FOUND"; 
-                }
-                
-                return null;
+        # Verificăm dacă suntem pe pagina de rezultate (nu a redirecționat) sau pe o pagină goală
+        current_url = page.url
+        
+        # Logica de verificare a paginii goale (Moto24)
+        no_results_found = await page.evaluate('''
+            () => {
+                const noResults = document.querySelector('.alert.alert-warning, .no-products, .no-results, .wk_search_list:empty'); 
+                return !!noResults;
             }
-        ''', product_code) 
-
-        if product_link == "NO_RESULTS_FOUND":
+        ''')
+        
+        if no_results_found:
             print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
             return None
-        
-        if not product_link:
-            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
-            return None
-        
-        # PASUL 2: Navighează la link-ul produsului și extrage prețul
-        print(f"      Navighez la pagina produsului: {product_link}")
-        await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) 
 
+        # Dacă am ajuns aici, fie am redirecționat la pagina produsului, fie suntem pe pagina de căutare cu rezultate
+        # Deoarece Moto24 redirecționează direct, vom extrage prețul de pe URL-ul curent
+        
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
         price_selectors = [
-            '.single-product-wrapper .woocommerce-Price-amount', 
+            '.summary .price .price-actual', # Un selector PrestaShop/Moto24 comun
+            '#center_column .price',
+            '.summary .woocommerce-Price-amount', 
             '.price ins .amount', 
             'p.price', 
             '.summary .price',
@@ -113,7 +92,7 @@ async def _scrape_moto24_async_search(search_url, product_code):
             price_ron = clean_and_convert_price(price_text)
             
             if price_ron is not None:
-                print(f"      ✅ Preț RON extras (Pyppeteer/Pagina Produs): {price_ron} RON")
+                print(f"      ✅ Preț RON extras (Moto24/Redirecționare): {price_ron} RON")
                 return price_ron
             
         print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Moto24.")
