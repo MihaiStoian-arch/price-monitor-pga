@@ -47,8 +47,8 @@ def scrape_nordicamoto_search(product_code):
         response_search.raise_for_status()
         soup_search = BeautifulSoup(response_search.content, 'html.parser')
 
-        # Selector generic pentru link-ul primului produs
-        product_link_element = soup_search.select_one('.products a.woocommerce-LoopProduct-link')
+        # Selector generic: Caută link-ul din interiorul primului card de produs
+        product_link_element = soup_search.select_one('.products .product:first-child a[href]')
         
         if not product_link_element:
             # Fallback: încearcă orice link dintr-un card de produs
@@ -67,7 +67,7 @@ def scrape_nordicamoto_search(product_code):
         response_product.raise_for_status()
         soup_product = BeautifulSoup(response_product.content, 'html.parser')
         
-        # Selectori ULTRA-ROBUȘTI pentru pagina de produs
+        # Selectori ULTRA-ROBUȘTI pentru pagina de produs (fără JS)
         price_selectors = [
             '.summary .woocommerce-Price-amount', 
             '.product-info .price',                   
