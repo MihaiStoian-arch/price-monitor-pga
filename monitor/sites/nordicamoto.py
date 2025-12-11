@@ -5,13 +5,12 @@ import time
 
 def scrape_nordicamoto_search(product_code):
     """
-    Caută prețul unui produs pe nordicamoto.ro folosind codul produsului, 
-    folosind selectori robuști pentru paginile de căutare WooCommerce.
+    Caută prețul unui produs pe nordicamoto.ro folosind codul produsului.
+    Folosește selectori robuști pentru paginile de căutare WooCommerce.
     """
     if not product_code:
         return None
 
-    # URL-ul de căutare
     search_url = f"https://www.nordicamoto.ro/?s={product_code}"
     
     try:
@@ -27,32 +26,34 @@ def scrape_nordicamoto_search(product_code):
 
         # --- Selectori Robuști (De la cel mai specific la cel mai general) ---
         
-        # 1. Caută prețul în cardul de produs (cel mai comun selector WooCommerce)
-        price_element = soup.select_one('.product-small .woocommerce-Price-amount') 
+        # 1. Selectorul WooCommerce standard (cel mai precis)
+        price_element = soup.select_one('.product .woocommerce-Price-amount') 
 
-        # 2. Caută doar clasa generică de preț (amount) în card
+        # 2. Selectorul care vizează elementul <b> din structura de preț
+        # Acest lucru ajută dacă prețul este marcat cu bold într-un span.
         if not price_element:
-            price_element = soup.select_one('.product-small .amount')
+            price_element = soup.select_one('.product .price b')
             
-        # 3. Caută cel mai general selector de preț WooCommerce pe toată pagina
+        # 3. Selectorul general de preț în interiorul unui produs (elementul <span>.amount)
         if not price_element:
-            price_element = soup.select_one('.woocommerce-Price-amount')
+            price_element = soup.select_one('.product .amount')
 
-        # 4. Selectorul pentru elementul 'price' (poate conține prețul)
+        # 4. Selectorul pentru clasa 'price' (cel mai generic)
         if not price_element:
-            price_element = soup.select_one('.price')
+            price_element = soup.select_one('.product .price')
+
 
         if price_element:
             price_text = price_element.get_text(strip=True)
             
-            # --- Curățarea și Conversia Prețului ---
+            # Curățarea și Conversia Prețului
             price_text = price_text.replace('.', '') 
             price_text = price_text.replace(',', '.') 
             cleaned_price = re.sub(r'[^\d.]', '', price_text)
             
             if cleaned_price:
                 price_ron = float(cleaned_price)
-                print(f"✅ Preț Nordicamoto extras: {price_ron} RON")
+                print(f"      ✅ Preț Nordicamoto extras: {price_ron} RON")
                 return price_ron
             
         print(f"❌ EROARE: Prețul nu a fost găsit în rezultatele căutării Nordicamoto pentru {product_code}.")
