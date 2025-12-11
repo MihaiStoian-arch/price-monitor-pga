@@ -25,9 +25,9 @@ def scrape_moto24_search(product_code):
     Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
     """
     if not product_code: return None
-    search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
+    # 🛑 CORECȚIE URL V9
+    search_url = f"https://www.moto24.ro/module/wkelasticsearch/wkelasticsearchlist?s={product_code}"
     try:
-        # Folosim run_until_complete pentru a rula funcția asincronă
         return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
     except Exception as e:
         # Aici prindem erorile mari din funcția asincronă
