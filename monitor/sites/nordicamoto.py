@@ -54,17 +54,18 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // Caută link-ul care se află în orice container de produs comun
-                const productLink = document.querySelector('.product-container a[href], .product-item a[href], .ajax_block_product a[href]');
+                // 1. Selector care vizează link-ul din TITLUL primului produs din lista de rezultate
+                const productTitleLink = document.querySelector('ul.product_list li:first-child .product-name a[href]');
                 
-                if (productLink) {
-                    return productLink.href;
+                if (productTitleLink) {
+                    return productTitleLink.href;
                 }
                 
                 // Fallback: Caută cel mai bun link care menționează codul, dar nu este în header/footer
                 const allLinks = Array.from(document.querySelectorAll('#columns a[href], #center_column a[href]'))
                     .find(a => 
-                        a.href.includes(codeUpper) && a.href.length > 50 // Lungime URL pt a filtra linkurile scurte
+                        a.href.includes(codeUpper) && 
+                        a.href.length > 50 
                     );
 
                 if (allLinks) {
