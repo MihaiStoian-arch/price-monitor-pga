@@ -11,18 +11,12 @@ def clean_and_convert_price(price_text):
     
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     
-    # 1. Eliminăm spațiile
     price_text = price_text.replace(' ', '')
     
-    # 2. Dacă conține și punct și virgulă, eliminăm punctele (separator de mii)
     if price_text.count('.') > 0 and price_text.count(',') > 0:
-        # Ex: 1.234,50 -> 1234,50
         price_text = price_text.replace('.', '')
         
-    # 3. Standardizăm separatorul zecimal la punct (Ex: 1234,50 -> 1234.50)
     cleaned_price_str = price_text.replace(',', '.')
-    
-    # 4. Eliminăm orice alt caracter non-numeric sau non-punct
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
     try:
@@ -39,7 +33,6 @@ def scrape_moto24_search(product_code):
     if not product_code:
         return None
         
-    # URL-ul de căutare
     search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
     
     try:
@@ -52,7 +45,6 @@ async def _scrape_moto24_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
     browser = None
     try:
-        # Lansarea browser-ului headless
         browser = await launch(
             headless=True,
             args=['--no-sandbox', '--disable-setuid-sandbox'] 
@@ -60,46 +52,46 @@ async def _scrape_moto24_async_search(search_url, product_code):
         page = await browser.newPage()
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # PASUL 1: Caută produsul și extrage link-ul
+        # PASUL 1: Caută produsul și extrage link-ul (Simplificat: ia primul produs)
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Selector robust pentru link-ul produsului în rezultatele căutării WooCommerce
-        # Caută un link 'a' din interiorul unui element cu clasa 'product'
-        link_selector = '.product a'
+        # Selector generic pentru link-ul primului produs din rezultatele căutării WooCommerce
+        link_selector = '.products a.woocommerce-LoopProduct-link'
         
-        # Extrage href-ul primului link de produs găsit
         product_link = await page.evaluate(f'''
             const linkElement = document.querySelector('{link_selector}');
-            if (linkElement && linkElement.href.includes('{product_code}')) {{
-                return linkElement.href;
-            }}
-            // Fallback: încearcă primul link de produs
             if (linkElement) {{
                 return linkElement.href;
+            }}
+            // Fallback la orice link dintr-un produs
+            const fallbackLink = document.querySelector('.product a');
+            if (fallbackLink) {{
+                return fallbackLink.href;
             }}
             return null;
         ''')
 
         if not product_link:
-            print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Moto24 (Cod: {product_code}).")
+            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
             return None
         
         # PASUL 2: Navighează la link-ul produsului și extrage prețul
         print(f"      Navighez la pagina produsului: {product_link}")
         await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) # Așteaptă randarea completă a prețului
+        await asyncio.sleep(5) 
 
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Selectori foarte generali pentru preț pe pagina de produs WooCommerce
+        # Selectori ULTRA-ROBUȘTI pentru preț pe pagina de produs
         price_selectors = [
-            '.single-product-wrapper .woocommerce-Price-amount', # Specific pentru WooCommerce
-            '.price ins .amount',                               # Preț cu reducere (ins)
-            '.price > .amount',                                 # Preț standard
-            'p.price',                                          # Tag-ul de preț
-            '.summary .price',                                  # General wrapper
+            '.single-product-wrapper .woocommerce-Price-amount', 
+            '.price ins .amount', 
+            '.price > .amount', 
+            'p.price', 
+            '.summary .price',
+            '[itemprop="price"]', 
         ]
         
         price_element = None
