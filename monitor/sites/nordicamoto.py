@@ -33,7 +33,7 @@ def scrape_nordicamoto_search(product_code):
         print(f"❌ EROARE GENERALĂ la Nordicamoto (Wrapper/Async): {e}")
         return None
 
-# FUNCTIA ASINCRONĂ PRINCIPALĂ
+# FUNCTIA ASINCRONĂ PRINCIPALĂ (NORDICAMOTO - Listă de rezultate)
 async def _scrape_nordicamoto_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Nordicamoto) pentru căutarea codului: {product_code}")
     browser = None
@@ -49,29 +49,18 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Logica de căutare a link-ului (V10: Selector specific Nordicamoto)
+        # Logica de căutare a link-ului (V13: Selector bazat pe structura "li.ajax_block_product")
         product_link = await page.evaluate('''
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // 1. Selector care vizează link-ul din TITLUL primului produs din lista de rezultate
-                const productTitleLink = document.querySelector('ul.product_list li:first-child .product-name a[href]');
+                // Selector foarte specific pentru primul element din lista de produse: UL cu LI-uri de produs
+                const productTitleLink = document.querySelector('ul.product_list > li:first-child .product-name a[href]');
                 
                 if (productTitleLink) {
                     return productTitleLink.href;
                 }
                 
-                // Fallback: Caută cel mai bun link care menționează codul, dar nu este în header/footer
-                const allLinks = Array.from(document.querySelectorAll('#columns a[href], #center_column a[href]'))
-                    .find(a => 
-                        a.href.includes(codeUpper) && 
-                        a.href.length > 50 
-                    );
-
-                if (allLinks) {
-                    return allLinks.href;
-                }
-
                 // Verificăm dacă pagina de căutare este goală
                 const noResults = document.querySelector('.alert.alert-warning, .no-results, .woocommerce-info'); 
                 if (noResults) {
@@ -99,6 +88,7 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
         soup = BeautifulSoup(content, 'html.parser')
 
         price_selectors = [
+            '#center_column .price', # Selector specific zonei de preț
             '.summary .woocommerce-Price-amount', 
             '.product-info .price', 
             'p.price', 
