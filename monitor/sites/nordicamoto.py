@@ -25,9 +25,9 @@ def scrape_nordicamoto_search(product_code):
     Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul.
     """
     if not product_code: return None
-    search_url = f"https://www.nordicamoto.ro/?s={product_code}"
+    # 🛑 CORECȚIE URL V9
+    search_url = f"https://www.nordicamoto.ro/search?search={product_code}"
     try:
-        # Folosim run_until_complete pentru a rula funcția asincronă
         return asyncio.get_event_loop().run_until_complete(_scrape_nordicamoto_async_search(search_url, product_code))
     except Exception as e:
         # Aici prindem erorile mari din funcția asincronă
