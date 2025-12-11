@@ -10,12 +10,9 @@ def clean_and_convert_price(price_text):
         return None
     
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
-    
     price_text = price_text.replace(' ', '')
-    
     if price_text.count('.') > 0 and price_text.count(',') > 0:
         price_text = price_text.replace('.', '')
-        
     cleaned_price_str = price_text.replace(',', '.')
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
@@ -27,15 +24,9 @@ def clean_and_convert_price(price_text):
         return None
 
 def scrape_moto24_search(product_code):
-    """
-    Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
-    """
     if not product_code:
         return None
-        
-    # URL-ul de căutare
     search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
-    
     try:
         return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
     except Exception as e:
@@ -53,31 +44,32 @@ async def _scrape_moto24_async_search(search_url, product_code):
         page = await browser.newPage()
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # PASUL 1: Caută produsul și extrage link-ul (Simplificat: ia primul produs)
+        # PASUL 1: Caută produsul și extrage link-ul
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Selector generic: Caută link-ul din interiorul primului card de produs
         link_selector = '.products .product:first-child a[href]'
         
+        # 🛑 CORECȚIE SINTAXĂ JAVASCRIPT
         product_link = await page.evaluate(f'''
-            const linkElement = document.querySelector('{link_selector}');
-            if (linkElement) {{
-                return linkElement.href;
-            }}
-            // Fallback: încearcă orice link dintr-un card de produs
-            const fallbackLink = document.querySelector('.product a');
-            if (fallbackLink) {{
-                return fallbackLink.href;
-            }}
-            return null;
+            (() => {{
+                const linkElement = document.querySelector('{link_selector}');
+                if (linkElement) {{
+                    return linkElement.href;
+                }}
+                const fallbackLink = document.querySelector('.product a');
+                if (fallbackLink) {{
+                    return fallbackLink.href;
+                }}
+                return null;
+            }})()
         ''')
 
         if not product_link:
             print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
             return None
         
-        # PASUL 2: Navighează la link-ul produsului și extrage prețul
+        # PASUL 2: Extrage prețul (logica Pyppeteer/BeautifulSoup)
         print(f"      Navighez la pagina produsului: {product_link}")
         await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
@@ -85,7 +77,6 @@ async def _scrape_moto24_async_search(search_url, product_code):
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Selectori ULTRA-ROBUȘTI pentru preț pe pagina de produs (fără JS)
         price_selectors = [
             '.single-product-wrapper .woocommerce-Price-amount', 
             '.price ins .amount', 
@@ -112,6 +103,7 @@ async def _scrape_moto24_async_search(search_url, product_code):
         return None
 
     except Exception as e:
+        # Aici prindem erorile din Pyppeteer, inclusiv Evaluation failed
         print(f"❌ EXCEPȚIE la Pyppeteer/Randare Moto24: {e}")
         return None
     finally:
