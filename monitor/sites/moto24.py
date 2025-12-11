@@ -26,37 +26,36 @@ def scrape_moto24_search(product_code):
         return None
 
 async def _scrape_moto24_async_search(search_url, product_code):
-    print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
-    browser = None
-    try:
-        browser = await launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox']) 
-        page = await browser.newPage()
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        
-        # PASUL 1: Caută produsul și extrage link-ul
-        await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) 
+    # ... (pașii de lansare browser și goto) ...
+    
+    # PASUL 1: Caută produsul și extrage link-ul
+    await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
+    await asyncio.sleep(5) 
 
-        # 🛑 CORECȚIE SINTAXĂ JAVASCRIPT FINALĂ: O singură expresie ternară sigură
-        # Această formă evită blocurile de returnare multiple
-        product_link = await page.evaluate('''
-            (selector) => {
-                const linkElement = document.querySelector(selector);
-                const fallbackLink = document.querySelector('.product a');
-                
-                if (linkElement) {
-                    return linkElement.href;
-                }
-                if (fallbackLink) {
-                    return fallbackLink.href;
-                }
-                return null;
-            }
-        ''', '.products .product:first-child a[href]') # Trimitem selectorul ca argument
+    # Selector mai flexibil pentru a găsi orice link de produs
+    product_link = await page.evaluate(f'''
+        (code) => {{
+            // Caută orice link <a> care se află într-un element care conține clasa 'product'
+            const productElement = document.querySelector('.product a[href]');
+            
+            // Dacă primul link de produs a fost găsit
+            if (productElement) {{
+                return productElement.href;
+            }}
+            
+            // Fallback: Caută primul link care conține codul produsului în URL (mai riscant, dar util)
+            const allLinks = Array.from(document.querySelectorAll('a[href*="' + code + '"]'));
+            if (allLinks.length > 0) {{
+                return allLinks[0].href;
+            }}
+            
+            return null;
+        }}
+    ''', product_code) # Trimitem codul produsului ca argument
 
-        if not product_link:
-            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
-            return None
+    if not product_link:
+        print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
+        return None
         
         # PASUL 2: Navighează la link-ul produsului și extrage prețul (logica BeautifulSoup)
         print(f"      Navighez la pagina produsului: {product_link}")
