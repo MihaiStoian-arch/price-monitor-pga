@@ -7,7 +7,7 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import asyncio # Adăugat pentru a suporta Pyppeteer
+import asyncio # Esențial pentru Pyppeteer
 
 # --- CONFIGURARE EMAIL (SCHIMBĂ VALORILE CU DATELE TALE) ---
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
@@ -20,26 +20,16 @@ SMTP_PORT = 587
 # ⚠️ ASIGURĂ-TE CĂ AI INSTALAT TOATE DEPENDENȚELE:
 # pip install gspread oauth2client requests beautifulsoup4 pyppeteer
 
-# --- IMPORTURI FUNCȚII DE SCRAPING ---
-from monitor.sites.atvrom import get_atvrom_price_map
-def process_atvrom_link(url):
-    return None # Returnează None, deoarece prețul va fi preluat din harta globală
-from monitor.sites.evo_moto import scrape_evomoto
-from monitor.sites.moto4all import scrape_moto4all_prices
-from monitor.sites.motoboom import scrape_motoboom_prices
-from monitor.sites.motomus import get_motomus_price
-# 🛑 IMPORTURI ACTUALIZATE PENTRU MOTO24 ȘI NORDICAMOTO
+# --- IMPORTURI FUNCȚII DE SCRAPING ESENȚIALE PENTRU DEBUG ---
+# Acestea sunt singurele fișiere de care avem nevoie acum
 from monitor.sites.moto24 import scrape_moto24_search 
 from monitor.sites.nordicamoto import scrape_nordicamoto_search
 # ------------------------------------------------------------
 
-from monitor.sites.jetskiadrenalin import get_jetskiadrenalin_price
-
 
 # ----------------------------------------------------
 ## 1. ⚙️ Configurare
-# ... (aici vin toate funcțiile ajutătoare, setup_sheets_client, send_email, etc.)
-# Voi lăsa doar funcțiile esențiale pentru a nu pierde codul de sub ele
+# ... (Aici vin celelalte variabile de configurare din fisierul tau original)
 
 SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 CREDS_FILE = 'service_account_credentials.json'
@@ -58,7 +48,7 @@ PRET_MOTO24_COL_INDEX = 8
 PRET_NORDICAMOTO_COL_INDEX = 9
 # etc.
 
-# Funcții de utilitate (fără a le include integral, pentru a nu strica alte funcții)
+# Funcția setup_sheets_client (PĂSTRAȚI CODUL ORIGINAL)
 def setup_sheets_client():
     # ... (logica de inițializare gspread) ...
     try:
@@ -70,11 +60,11 @@ def setup_sheets_client():
         print(f"❌ Eroare la inițializarea Google Sheets: {e}")
         return None
 
-# ... (includeti restul functiilor, inclusiv send_email, process_atvrom_price_map, etc.) ...
+# ... (includeti restul functiilor, inclusiv send_email, process_atvrom_price_map, run_price_monitor etc. - dacă acestea există și nu le-ați eliminat) ...
 
 
 # ----------------------------------------------------
-## 3. 🔄 Logica de Procesare și Actualizare
+## 3. 🔄 Logica de Procesare (păstrată pentru integritate, dar nefolosită în debug)
 # ----------------------------------------------------
 
 def get_scraper_function(site_name):
@@ -83,15 +73,12 @@ def get_scraper_function(site_name):
     mapping = {
         'moto24.ro': scrape_moto24_search,
         'nordicamoto.ro': scrape_nordicamoto_search,
-        # ... (adăugați și celelalte site-uri) ...
-        # 'atvrom.ro': process_atvrom_link, 
-        # 'evomoto.ro': scrape_evomoto,
-        # etc.
+        # Aici ar veni celelalte site-uri când revenim la monitorizarea completă
     }
     return mapping.get(site_name)
 
 def run_price_monitor(sheet_client):
-    # ... (logica principală de monitorizare, păstrați-o pe cea existentă) ...
+    # ... (logica principală de monitorizare, lăsați-o pe cea existentă) ...
     pass
     
 
@@ -101,7 +88,6 @@ def run_price_monitor(sheet_client):
 
 def run_debug_test():
     """Rulează un test izolat pe codul HJC100528-XS pentru a forța log-urile."""
-    # Folosim un cod real pentru a ne asigura că navigarea funcționează
     PRODUCT_CODE = 'HJC100528-XS' 
 
     print("--- TEST NORDICAMOTO (PYPPETEER) ---")
@@ -122,11 +108,10 @@ def run_debug_test():
 
 if __name__ == "__main__":
     
-    # 🛑 DEZACTIVAȚI TEMPORAR CODUL DE MONITORIZARE PRINCIPALĂ 
-    # ȘI RULAȚI DOAR TESTUL DE DEBUG PENTRU A VEDEA PROBLEMA EXACTĂ
+    # RULĂM DOAR TESTUL DE DEBUG
     run_debug_test()
     
-    # Comentați sau ștergeți liniile de mai jos (cele care interacționează cu Google Sheets)
+    # Codul original al monitorului este dezactivat temporar.
     # sheet_client = setup_sheets_client()
     # if sheet_client:
     #     run_price_monitor(sheet_client)
