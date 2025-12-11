@@ -45,15 +45,11 @@ async def _scrape_moto24_async_search(search_url, product_code):
         page = await browser.newPage()
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # PASUL 1: Navighează la URL-ul de căutare. 
-        # Dacă există, site-ul ar trebui să redirecționeze automat la pagina produsului.
+        # PASUL 1: Navighează la URL-ul de căutare. Așteptăm 8 secunde pentru redirect
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) 
+        await asyncio.sleep(8) # Așteptăm mai mult pentru a prinde redirect-ul
 
-        # Verificăm dacă suntem pe pagina de rezultate (nu a redirecționat) sau pe o pagină goală
-        current_url = page.url
-        
-        # Logica de verificare a paginii goale (Moto24)
+        # Logica de verificare a paginii goale
         no_results_found = await page.evaluate('''
             () => {
                 const noResults = document.querySelector('.alert.alert-warning, .no-products, .no-results, .wk_search_list:empty'); 
@@ -65,15 +61,14 @@ async def _scrape_moto24_async_search(search_url, product_code):
             print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
             return None
 
-        # Dacă am ajuns aici, fie am redirecționat la pagina produsului, fie suntem pe pagina de căutare cu rezultate
-        # Deoarece Moto24 redirecționează direct, vom extrage prețul de pe URL-ul curent
-        
+        # Dacă am ajuns aici, suntem pe pagina produsului (sau o pagină cu conținut). Extragem prețul.
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
         price_selectors = [
-            '.summary .price .price-actual', # Un selector PrestaShop/Moto24 comun
-            '#center_column .price',
+            '#center_column .price', # Selector specific zonei de preț PrestaShop
+            '.price .current-price', # Un alt selector comun
+            '.summary .price .price-actual', 
             '.summary .woocommerce-Price-amount', 
             '.price ins .amount', 
             'p.price', 
