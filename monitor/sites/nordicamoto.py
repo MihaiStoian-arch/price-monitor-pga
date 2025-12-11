@@ -1,5 +1,40 @@
-# ... (restul codului, inclusiv clean_and_convert_price și scrape_nordicamoto_search) ...
+from bs4 import BeautifulSoup
+import re
+import asyncio
+from pyppeteer import launch
+import time
 
+def clean_and_convert_price(price_text):
+    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
+    if not price_text: return None
+    
+    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
+    price_text = price_text.replace(' ', '')
+    if price_text.count('.') > 0 and price_text.count(',') > 0: price_text = price_text.replace('.', '')
+    cleaned_price_str = price_text.replace(',', '.')
+    cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
+    
+    try:
+        if cleaned_price_str: return float(cleaned_price_str)
+        return None
+    except ValueError: return None
+
+# ACEASTA ESTE FUNCȚIA PE CARE 'main.py' TREBUIE SĂ O IMPORTE
+def scrape_nordicamoto_search(product_code):
+    """
+    Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul.
+    """
+    if not product_code: return None
+    search_url = f"https://www.nordicamoto.ro/?s={product_code}"
+    try:
+        # Folosim run_until_complete pentru a rula funcția asincronă
+        return asyncio.get_event_loop().run_until_complete(_scrape_nordicamoto_async_search(search_url, product_code))
+    except Exception as e:
+        # Aici prindem erorile mari din funcția asincronă
+        print(f"❌ EROARE GENERALĂ la Nordicamoto (Wrapper/Async): {e}")
+        return None
+
+# ACEASTA ESTE FUNCȚIA ASINCRONĂ (CODUL TRIMIS DE DUMNEAVOASTRĂ)
 async def _scrape_nordicamoto_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Nordicamoto) pentru căutarea codului: {product_code}")
     browser = None
