@@ -1,76 +1,53 @@
-from bs4 import BeautifulSoup
-import re
-import asyncio
-from pyppeteer import launch
-import time
-
-def clean_and_convert_price(price_text):
-    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
-    if not price_text: return None
-    
-    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
-    price_text = price_text.replace(' ', '')
-    if price_text.count('.') > 0 and price_text.count(',') > 0: price_text = price_text.replace('.', '')
-    cleaned_price_str = price_text.replace(',', '.')
-    cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
-    
-    try:
-        if cleaned_price_str: return float(cleaned_price_str)
-        return None
-    except ValueError: return None
-
-def scrape_moto24_search(product_code):
-    """
-    Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
-    """
-    if not product_code: return None
-    search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
-    try:
-        return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
-    except Exception as e:
-        print(f"❌ EROARE GENERALĂ la Moto24 (Wrapper/Async): {e}")
-        return None
+# ... (restul codului, inclusiv clean_and_convert_price și scrape_moto24_search) ...
 
 async def _scrape_moto24_async_search(search_url, product_code):
-    # ... (pașii de lansare browser și goto) ...
-    
-    # PASUL 1: Caută produsul și extrage link-ul
-    await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-    await asyncio.sleep(5) 
+    print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
+    browser = None
+    try:
+        browser = await launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox'] 
+        )
+        page = await browser.newPage()
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        
+        # PASUL 1: Caută produsul și extrage link-ul
+        await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
+        await asyncio.sleep(5) 
 
-    # 🛑 CORECȚIE FINALĂ V6: Caută link-ul care conține codul în text sau în href
-    product_link = await page.evaluate('''
-        (code) => {
-            const codeUpper = code.toUpperCase();
-            
-            // 1. Caută link-ul care conține codul de produs fie în HREF, fie în TEXT
-            const linkElement = Array.from(document.querySelectorAll('a[href]'))
-                .find(a => 
-                    a.href.includes(codeUpper) || 
-                    a.innerText.toUpperCase().includes(codeUpper)
-                );
-            
-            if (linkElement) {
-                return linkElement.href;
+        # Logica de căutare a link-ului (V6: robustă)
+        product_link = await page.evaluate('''
+            (code) => {
+                const codeUpper = code.toUpperCase();
+                
+                // 1. Caută link-ul care conține codul de produs fie în HREF, fie în TEXT
+                const linkElement = Array.from(document.querySelectorAll('a[href]'))
+                    .find(a => 
+                        a.href.includes(codeUpper) || 
+                        a.innerText.toUpperCase().includes(codeUpper)
+                    );
+                
+                if (linkElement) {
+                    return linkElement.href;
+                }
+                
+                // Verificăm dacă pagina de căutare este goală 
+                const noResults = document.querySelector('.woocommerce-info'); 
+                if (noResults) {
+                    return "NO_RESULTS_FOUND"; 
+                }
+                
+                return null;
             }
-            
-            // Verificăm dacă pagina de căutare este goală (logică de debug)
-            const noResults = document.querySelector('.woocommerce-info'); // Selector comun WooCommerce
-            if (noResults) {
-                return "NO_RESULTS_FOUND"; 
-            }
-            
-            return null;
-        }
-    ''', product_code) 
+        ''', product_code) 
 
-    if product_link == "NO_RESULTS_FOUND":
-        print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
-        return None
-    
-    if not product_link:
-        print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
-        return None
+        if product_link == "NO_RESULTS_FOUND":
+            print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
+            return None
+        
+        if not product_link:
+            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
+            return None
         
         # PASUL 2: Navighează la link-ul produsului și extrage prețul
         print(f"      Navighez la pagina produsului: {product_link}")
@@ -105,9 +82,6 @@ async def _scrape_moto24_async_search(search_url, product_code):
         print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Moto24.")
         return None
 
-    except Exception as e:
-        print(f"❌ EXCEPȚIE la Pyppeteer/Randare Moto24: {e}")
-        return None
     finally:
         if browser:
             await browser.close()
