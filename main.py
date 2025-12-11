@@ -7,7 +7,14 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import asyncio # Esențial pentru Pyppeteer
+import asyncio 
+
+# --- IMPORTURI FUNCȚII DE SCRAPING ESENȚIALE PENTRU DEBUG ---
+# Ne asigurăm că acestea sunt corect definite și importate
+from monitor.sites.moto24 import scrape_moto24_search 
+from monitor.sites.nordicamoto import scrape_nordicamoto_search
+# ------------------------------------------------------------
+
 
 # --- CONFIGURARE EMAIL (SCHIMBĂ VALORILE CU DATELE TALE) ---
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
@@ -17,18 +24,9 @@ SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 587
 # ------------------------------------------------------------
 
-# ⚠️ ASIGURĂ-TE CĂ AI INSTALAT TOATE DEPENDENȚELE:
-# pip install gspread oauth2client requests beautifulsoup4 pyppeteer
-
-# --- IMPORTURI FUNCȚII DE SCRAPING ESENȚIALE PENTRU DEBUG ---
-# Acestea sunt singurele fișiere de care avem nevoie acum
-from monitor.sites.moto24 import scrape_moto24_search 
-from monitor.sites.nordicamoto import scrape_nordicamoto_search
-# ------------------------------------------------------------
-
 
 # ----------------------------------------------------
-## 1. ⚙️ Configurare
+## 1. ⚙️ Configurare Google Sheets
 # ... (Aici vin celelalte variabile de configurare din fisierul tau original)
 
 SCOPE = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -48,9 +46,7 @@ PRET_MOTO24_COL_INDEX = 8
 PRET_NORDICAMOTO_COL_INDEX = 9
 # etc.
 
-# Funcția setup_sheets_client (PĂSTRAȚI CODUL ORIGINAL)
 def setup_sheets_client():
-    # ... (logica de inițializare gspread) ...
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, SCOPE)
         client = gspread.authorize(creds)
@@ -60,30 +56,25 @@ def setup_sheets_client():
         print(f"❌ Eroare la inițializarea Google Sheets: {e}")
         return None
 
-# ... (includeti restul functiilor, inclusiv send_email, process_atvrom_price_map, run_price_monitor etc. - dacă acestea există și nu le-ați eliminat) ...
-
-
 # ----------------------------------------------------
-## 3. 🔄 Logica de Procesare (păstrată pentru integritate, dar nefolosită în debug)
+## 2. 🔄 Logica de Procesare (Dezactivată, doar pentru structură)
 # ----------------------------------------------------
 
 def get_scraper_function(site_name):
     """Returnează funcția de scraping corespunzătoare pentru un anumit site."""
-    # MAPARE SITE -> FUNCȚIE
     mapping = {
         'moto24.ro': scrape_moto24_search,
         'nordicamoto.ro': scrape_nordicamoto_search,
-        # Aici ar veni celelalte site-uri când revenim la monitorizarea completă
     }
     return mapping.get(site_name)
 
 def run_price_monitor(sheet_client):
-    # ... (logica principală de monitorizare, lăsați-o pe cea existentă) ...
+    # Logica de monitorizare a prețurilor ar veni aici
     pass
     
 
 # ----------------------------------------------------
-## 4. 🏁 Punctul de Intrare
+## 3. 🏁 Punctul de Intrare (Debug Test)
 # ----------------------------------------------------
 
 def run_debug_test():
@@ -95,23 +86,17 @@ def run_debug_test():
         price_nordicamoto = scrape_nordicamoto_search(PRODUCT_CODE)
         print(f"REZULTAT NORDICAMOTO FINAL: {price_nordicamoto}")
     except Exception as e:
-        print(f"⚠️ EROARE GRAVĂ DE DEBUG NORDICAMOTO: {e}")
+        print(f"⚠️ EROARE GRAVĂ DE DEBUG NORDICAMOTO (Wrapper): {e}")
 
     print("\n--- TEST MOTO24 (PYPPETEER) ---")
     try:
         price_moto24 = scrape_moto24_search(PRODUCT_CODE)
         print(f"REZULTAT MOTO24 FINAL: {price_moto24}")
     except Exception as e:
-        print(f"⚠️ EROARE GRAVĂ DE DEBUG MOTO24: {e}")
+        print(f"⚠️ EROARE GRAVĂ DE DEBUG MOTO24 (Wrapper): {e}")
     
     print("\n--- SFÂRȘITUL TESTULUI DE DEBUG ---")
 
 if __name__ == "__main__":
-    
     # RULĂM DOAR TESTUL DE DEBUG
     run_debug_test()
-    
-    # Codul original al monitorului este dezactivat temporar.
-    # sheet_client = setup_sheets_client()
-    # if sheet_client:
-    #     run_price_monitor(sheet_client)
