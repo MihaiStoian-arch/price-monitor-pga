@@ -33,6 +33,7 @@ def scrape_moto24_search(product_code):
     if not product_code:
         return None
         
+    # URL-ul de căutare
     search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
     
     try:
