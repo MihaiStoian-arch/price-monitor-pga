@@ -56,15 +56,15 @@ async def _scrape_moto24_async_search(search_url, product_code):
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Selector generic pentru link-ul primului produs din rezultatele căutării WooCommerce
-        link_selector = '.products a.woocommerce-LoopProduct-link'
+        # Selector generic: Caută link-ul din interiorul primului card de produs
+        link_selector = '.products .product:first-child a[href]'
         
         product_link = await page.evaluate(f'''
             const linkElement = document.querySelector('{link_selector}');
             if (linkElement) {{
                 return linkElement.href;
             }}
-            // Fallback la orice link dintr-un produs
+            // Fallback: încearcă orice link dintr-un card de produs
             const fallbackLink = document.querySelector('.product a');
             if (fallbackLink) {{
                 return fallbackLink.href;
@@ -84,11 +84,10 @@ async def _scrape_moto24_async_search(search_url, product_code):
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Selectori ULTRA-ROBUȘTI pentru preț pe pagina de produs
+        # Selectori ULTRA-ROBUȘTI pentru preț pe pagina de produs (fără JS)
         price_selectors = [
             '.single-product-wrapper .woocommerce-Price-amount', 
             '.price ins .amount', 
-            '.price > .amount', 
             'p.price', 
             '.summary .price',
             '[itemprop="price"]', 
