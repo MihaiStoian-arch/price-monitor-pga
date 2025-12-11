@@ -11,25 +11,18 @@ def clean_and_convert_price(price_text):
     
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     
-    # Folosim o abordare mai simplă pentru a elimina separatorul de mii
-    # și a standardiza separatorul zecimal la punct.
-    
-    # 1. Eliminăm spațiile
     price_text = price_text.replace(' ', '')
     
-    # 2. Dacă conține și punct și virgulă, eliminăm punctele (separator de mii)
     if price_text.count('.') > 0 and price_text.count(',') > 0:
-        # Ex: 1.234,50 -> 1234,50
         price_text = price_text.replace('.', '')
         
-    # 3. Standardizăm separatorul zecimal la punct (Ex: 1234,50 -> 1234.50)
     cleaned_price_str = price_text.replace(',', '.')
-    
-    # 4. Eliminăm orice alt caracter non-numeric sau non-punct
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
     try:
-        return float(cleaned_price_str)
+        if cleaned_price_str:
+            return float(cleaned_price_str)
+        return None
     except ValueError:
         return None
 
@@ -60,34 +53,45 @@ async def _scrape_moto24_async_search(search_url, product_code):
         page = await browser.newPage()
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # PASUL 1: Caută produsul și extrage link-ul
+        # PASUL 1: Caută produsul și extrage link-ul (Simplificat: ia primul produs)
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(3) 
+        await asyncio.sleep(5) 
 
-        # Selector pentru link-ul produsului. Folosim link-ul care conține codul de produs
-        # Moto24 folosește o structură standard de WooCommerce pentru rezultate
-        link_selector = f'a[href*="{product_code.lower()}"]'
+        # Selector generic: Caută link-ul din interiorul primului card de produs
+        link_selector = '.products .product:first-child a[href]'
         
-        # Încercăm să găsim link-ul produsului cel mai relevant (primul)
-        product_link = await page.evaluate(f'document.querySelector("{link_selector}") ? document.querySelector("{link_selector}").href : null')
+        product_link = await page.evaluate(f'''
+            const linkElement = document.querySelector('{link_selector}');
+            if (linkElement) {{
+                return linkElement.href;
+            }}
+            // Fallback: încearcă orice link dintr-un card de produs
+            const fallbackLink = document.querySelector('.product a');
+            if (fallbackLink) {{
+                return fallbackLink.href;
+            }}
+            return null;
+        ''')
 
         if not product_link:
-            print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Moto24 (Cod: {product_code}).")
+            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Moto24 (Cod: {product_code}).")
             return None
         
         # PASUL 2: Navighează la link-ul produsului și extrage prețul
         print(f"      Navighez la pagina produsului: {product_link}")
         await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(3) # Așteaptă randarea completă a prețului
+        await asyncio.sleep(5) 
 
         content = await page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Selectori pentru pagina de produs (mult mai specifici)
+        # Selectori ULTRA-ROBUȘTI pentru preț pe pagina de produs (fără JS)
         price_selectors = [
-            '.single-product-wrapper .woocommerce-Price-amount', # Specific pentru WooCommerce
-            '.product-info-wrap .price',                        # Wrapper general
-            '.summary .price',                                  # General pentru WooCommerce
+            '.single-product-wrapper .woocommerce-Price-amount', 
+            '.price ins .amount', 
+            'p.price', 
+            '.summary .price',
+            '[itemprop="price"]', 
         ]
         
         price_element = None
