@@ -54,26 +54,22 @@ async def _scrape_moto24_async_search(search_url, product_code):
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // 1. Selector specific pentru primul produs din rezultatele Elastic Search (Div.product-container)
-                const productCard = document.querySelector('.wkelasticsearchlist-product-container:first-child a[href]');
+                // 1. Selector care vizează link-ul din TITLUL primului produs
+                const productTitleLink = document.querySelector('.wkelasticsearchlist-product-container:first-child .product-name a[href]');
                 
-                if (productCard) {
-                    return productCard.href;
+                if (productTitleLink) {
+                    return productTitleLink.href;
                 }
                 
-                // Fallback: Caută un link care conține codul produsului în zona principală de conținut
-                const allLinks = Array.from(document.querySelectorAll('#content a[href], .wk_search_list a[href]'))
-                    .find(a => 
-                        a.href.includes(codeUpper) || 
-                        (a.innerText && a.innerText.toUpperCase().includes(codeUpper))
-                    );
+                // 2. Fallback: Caută link-ul principal al întregului card de produs
+                const productCardLink = document.querySelector('.wkelasticsearchlist-product-container:first-child a.product_img_link[href]');
 
-                if (allLinks) {
-                    return allLinks.href;
+                if (productCardLink) {
+                    return productCardLink.href;
                 }
 
                 // Verificăm dacă pagina de căutare este goală
-                const noResults = document.querySelector('.alert.alert-warning, .no-results, .wk_search_list:empty'); 
+                const noResults = document.querySelector('.alert.alert-warning, .no-results, .wk_search_list:empty, .no-products'); 
                 if (noResults) {
                     return "NO_RESULTS_FOUND"; 
                 }
