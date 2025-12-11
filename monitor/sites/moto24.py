@@ -87,7 +87,9 @@ async def _scrape_moto24_async_search(search_url, product_code):
         return None
 
     except Exception as e:
+        # Aici prindem erorile din Pyppeteer
         print(f"❌ EXCEPȚIE la Pyppeteer/Randare Moto24: {e}")
         return None
     finally:
-        if browser: await browser.close()
+        if browser: 
+            await browser.close()
