@@ -33,7 +33,7 @@ def scrape_nordicamoto_search(product_code):
         print(f"❌ EROARE GENERALĂ la Nordicamoto (Wrapper/Async): {e}")
         return None
 
-# FUNCTIA ASINCRONĂ PRINCIPALĂ (NORDICAMOTO - V16: Extracție Link Simplă)
+# FUNCTIA ASINCRONĂ PRINCIPALĂ (NORDICAMOTO - V17: Extracție Link Extremă)
 async def _scrape_nordicamoto_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Nordicamoto) pentru căutarea codului: {product_code}")
     browser = None
@@ -49,21 +49,29 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(8) 
 
-        # Logica de căutare a link-ului (V16: Caută cel mai bun link care conține codul produsului)
+        # Logica de căutare a link-ului (V17: Caută cel mai bun link care conține codul produsului, indiferent de clasă)
         product_link = await page.evaluate('''
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // Caută orice link A care conține codul în href SAU în text,
-                // ignorând link-urile scurte (probabil din meniuri/footer).
+                // 1. Caută orice link A care conține codul în href și are o lungime rezonabilă (link de produs)
                 const linkElement = Array.from(document.querySelectorAll('a[href]'))
                     .find(a => 
-                        a.href.includes(codeUpper) && a.href.length > 50 || 
-                        (a.innerText && a.innerText.toUpperCase().includes(codeUpper))
+                        a.href.includes(codeUpper) && a.href.length > 50
                     );
 
                 if (linkElement) {
                     return linkElement.href;
+                }
+                
+                // 2. Caută link-ul produsului care conține textul codului
+                const textLink = Array.from(document.querySelectorAll('a[href]'))
+                    .find(a => 
+                        a.innerText && a.innerText.toUpperCase().includes(codeUpper) && a.href.length > 50
+                    );
+                
+                if (textLink) {
+                    return textLink.href;
                 }
                 
                 // Verificăm dacă pagina de căutare este goală
@@ -80,7 +88,8 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
             print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
             return None
         
-        if not product_link:
+        # *CORECTIE CRITICĂ:* Dacă nu găsește un link valid, returnează None, nu continuă
+        if not product_link or product_link == search_url:
             print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
             return None
         
