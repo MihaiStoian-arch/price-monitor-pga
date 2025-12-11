@@ -90,4 +90,5 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
         print(f"❌ EXCEPȚIE la Pyppeteer/Randare Nordicamoto: {e}")
         return None
     finally:
-        if browser: await browser.close()
+        if browser: 
+            await browser.close()
