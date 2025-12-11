@@ -47,20 +47,26 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
         
         # PASUL 1: Caută produsul și extrage link-ul
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) 
+        await asyncio.sleep(8) # Așteptăm mai mult pentru a permite JS-ului să randeze
 
-        # Logica de căutare a link-ului (V13: Selector bazat pe structura "li.ajax_block_product")
+        # Logica de căutare a link-ului (V14: Caută orice link cu imagine de produs din zona centrală)
         product_link = await page.evaluate('''
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // Selector foarte specific pentru primul element din lista de produse: UL cu LI-uri de produs
-                const productTitleLink = document.querySelector('ul.product_list > li:first-child .product-name a[href]');
+                // Caută primul link care înconjoară o imagine de produs în zona centrală
+                const productLink = document.querySelector('#center_column .product_img_link[href], #columns .product_img_link[href]');
                 
+                if (productLink) {
+                    return productLink.href;
+                }
+                
+                // Fallback: Caută linkul titlului de produs
+                const productTitleLink = document.querySelector('.product-name a[href], .product-title a[href]');
                 if (productTitleLink) {
                     return productTitleLink.href;
                 }
-                
+
                 // Verificăm dacă pagina de căutare este goală
                 const noResults = document.querySelector('.alert.alert-warning, .no-results, .woocommerce-info'); 
                 if (noResults) {
@@ -89,6 +95,7 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
 
         price_selectors = [
             '#center_column .price', # Selector specific zonei de preț
+            '.price .current-price', # Un alt selector comun
             '.summary .woocommerce-Price-amount', 
             '.product-info .price', 
             'p.price', 
