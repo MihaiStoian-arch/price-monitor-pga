@@ -15,6 +15,7 @@ def clean_and_convert_price(price_text):
     
     # 2. Dacă conține și punct și virgulă, eliminăm punctele (separator de mii)
     if price_text.count('.') > 0 and price_text.count(',') > 0:
+        # Ex: 1.234,50 -> 1234,50
         price_text = price_text.replace('.', '')
         
     # 3. Standardizăm separatorul zecimal la punct (Ex: 1234,50 -> 1234.50)
@@ -24,9 +25,12 @@ def clean_and_convert_price(price_text):
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
     
     try:
-        return float(cleaned_price_str)
+        if cleaned_price_str:
+            return float(cleaned_price_str)
+        return None
     except ValueError:
         return None
+
 
 def scrape_nordicamoto_search(product_code):
     """
@@ -50,9 +54,8 @@ def scrape_nordicamoto_search(product_code):
         response_search.raise_for_status()
         soup_search = BeautifulSoup(response_search.content, 'html.parser')
 
-        # Selector pentru a găsi link-ul primului produs. 
-        # Caută un link 'a' care conține 'product' și codul de produs (insensibil la majuscule)
-        product_link_element = soup_search.select_one(f'.product a[href*="{product_code.lower()}"]')
+        # Selector robust pentru link-ul produsului
+        product_link_element = soup_search.select_one(f'.products a[href*="{product_code.lower()}"]')
         
         if not product_link_element:
             print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Nordicamoto (Cod: {product_code}).")
@@ -67,12 +70,13 @@ def scrape_nordicamoto_search(product_code):
         response_product.raise_for_status()
         soup_product = BeautifulSoup(response_product.content, 'html.parser')
         
-        # Selectori pentru pagina de produs
+        # Selectori pentru pagina de produs (foarte robuști pe WooCommerce)
         price_selectors = [
-            '.single-product .woocommerce-Price-amount', 
-            '.product-info .price',                   
-            '.summary .price',                        
-            'p.price'                                  
+            '.summary .woocommerce-Price-amount', # Cel mai specific în zona de summary
+            '.product-info .price',              # Wrapper general
+            'p.price',                           # Tag-ul de preț
+            '.price .amount',                    # Clasa amount
+            '.summary .price .amount',           # Combinație
         ]
         
         price_element = None
