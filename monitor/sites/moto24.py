@@ -19,22 +19,21 @@ def clean_and_convert_price(price_text):
         return None
     except ValueError: return None
 
-# ACEASTA ESTE FUNCTIA PE CARE 'main.py' ÎNCEARCĂ SĂ O IMPORTE!
+# FUNCTIA WRAPPER
 def scrape_moto24_search(product_code):
     """
     Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
     """
     if not product_code: return None
-    # 🛑 CORECȚIE URL V9
+    # URL CORECTAT V9
     search_url = f"https://www.moto24.ro/module/wkelasticsearch/wkelasticsearchlist?s={product_code}"
     try:
         return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
     except Exception as e:
-        # Aici prindem erorile mari din funcția asincronă
         print(f"❌ EROARE GENERALĂ la Moto24 (Wrapper/Async): {e}")
         return None
 
-# ACEASTA ESTE FUNCȚIA ASINCRONĂ (CODUL TRIMIS DE DUMNEAVOASTRĂ)
+# FUNCTIA ASINCRONĂ PRINCIPALĂ
 async def _scrape_moto24_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
     browser = None
@@ -50,24 +49,31 @@ async def _scrape_moto24_async_search(search_url, product_code):
         await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
 
-        # Logica de căutare a link-ului (V6: robustă)
+        # Logica de căutare a link-ului (V10: Selector specific Moto24 Elastic Search)
         product_link = await page.evaluate('''
             (code) => {
                 const codeUpper = code.toUpperCase();
                 
-                // 1. Caută link-ul care conține codul de produs fie în HREF, fie în TEXT
-                const linkElement = Array.from(document.querySelectorAll('a[href]'))
-                    .find(a => 
-                        a.href.includes(codeUpper) || 
-                        a.innerText.toUpperCase().includes(codeUpper)
-                    );
+                // 1. Selector specific pentru primul produs din rezultatele Elastic Search (Div.product-container)
+                const productCard = document.querySelector('.wkelasticsearchlist-product-container:first-child a[href]');
                 
-                if (linkElement) {
-                    return linkElement.href;
+                if (productCard) {
+                    return productCard.href;
                 }
                 
-                // Verificăm dacă pagina de căutare este goală 
-                const noResults = document.querySelector('.woocommerce-info'); 
+                // Fallback: Caută un link care conține codul produsului în zona principală de conținut
+                const allLinks = Array.from(document.querySelectorAll('#content a[href], .wk_search_list a[href]'))
+                    .find(a => 
+                        a.href.includes(codeUpper) || 
+                        (a.innerText && a.innerText.toUpperCase().includes(codeUpper))
+                    );
+
+                if (allLinks) {
+                    return allLinks.href;
+                }
+
+                // Verificăm dacă pagina de căutare este goală
+                const noResults = document.querySelector('.alert.alert-warning, .no-results, .wk_search_list:empty'); 
                 if (noResults) {
                     return "NO_RESULTS_FOUND"; 
                 }
