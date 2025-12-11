@@ -1,306 +1,115 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+from bs4 import BeautifulSoup
+import re
+import asyncio
+from pyppeteer import launch
 import time
-import requests
-# --- IMPORTURI PENTRU EMAIL ---
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-# --- IMPORTURI SCRAPERI (ECHIPAMENTE) ---
-# Asigură-te că funcțiile sunt importate corect din directorul monitor/sites
-from monitor.sites.moto24 import scrape_moto24_search
-from monitor.sites.nordicamoto import scrape_nordicamoto_search
-# ------------------------------------------------------------
 
-# --- CONFIGURARE EMAIL (SCHIMBĂ VALORILE CU DATELE TALE) ---
-SENDER_EMAIL = 'mihaistoian889@gmail.com'
-RECEIVER_EMAIL = 'octavian@atvrom.ro'
-SMTP_PASSWORD = 'igcu wwbs abit ganm'
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
-# ------------------------------------------------------------
-
-# Pragul minim de diferență (în RON) sub care nu se trimite alertă
-MINIMUM_DIFFERENCE_THRESHOLD = 1.0 
-
-# --- CONFIGURARE FOAIE DE CALCUL ---
-SPREADSHEET_NAME = 'Price Monitor ATVRom'
-WORKSHEET_NAME = 'Echipamente HJC'
-CREDENTIALS_FILE = 'service_account_credentials.json'
-
-# CORECȚIE CRITICĂ: Folosim o listă pentru a evita suprascrierea cheilor
-# Format: (Source Column Index, Destination Column Index, Scraper Function, Scraper Name)
-# Coloana B (Cod Produs) = 2, D (Moto24) = 4, E (Nordicamoto) = 5
-COMPETITOR_MAPPINGS = [
-    # Source Index 2 (Cod Produs) -> Destination Index 4 (Preț Moto24)
-    (2, 4, scrape_moto24_search, "Moto24"),             
-    # Source Index 2 (Cod Produs) -> Destination Index 5 (Preț Nordicamoto)
-    (2, 5, scrape_nordicamoto_search, "Nordicamoto"),   
-]
-
-# Coloana pentru Timestamp-ul general (Coloana F)
-TIMESTAMP_COL_INDEX = 6
-
-# ----------------------------------------------------
-## 2. 🔑 Funcțiile de Conexiune și Alertă (Logica se păstrează de la proiectul anterior)
-
-def get_public_ip():
-    # ... (corpul funcției) ...
-    try:
-        response = requests.get('https://ifconfig.me/ip', timeout=5)
-        if response.status_code == 200:
-            return response.text.strip()
-        return "N/A (Eroare de raspuns)"
-    except requests.exceptions.RequestException:
-        return "N/A (Eroare de retea)"
-
-def setup_sheets_client():
-    # ... (corpul funcției) ...
-    try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open(SPREADSHEET_NAME)
-        sheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        
-        print(f"✅ Conexiune reușită la foaia de lucru '{WORKSHEET_NAME}'.")
-
-        current_ip = get_public_ip()
-        print(f"🌐 IP-ul public de ieșire al Runner-ului: **{current_ip}**")
-        
-        return sheet
-    except Exception as e:
-        print(f"❌ Eroare la inițializarea Google Sheets client: {e}")
+def clean_and_convert_price(price_text):
+    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
+    if not price_text:
         return None
     
-def send_alert_email(subject, body):
-    # ... (corpul funcției) ...
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = RECEIVER_EMAIL
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'html')) 
-
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(SENDER_EMAIL, SMTP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        server.quit()
-        print(f"✔️ Notificare trimisă cu succes către {RECEIVER_EMAIL}")
-        return True
-    except Exception as e:
-        print(f"❌ Eroare la trimiterea email-ului: {e}")
-        return False
+    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     
-def send_price_alerts(sheet):
+    # Folosim o abordare mai simplă pentru a elimina separatorul de mii
+    # și a standardiza separatorul zecimal la punct.
+    
+    # 1. Eliminăm spațiile
+    price_text = price_text.replace(' ', '')
+    
+    # 2. Dacă conține și punct și virgulă, eliminăm punctele (separator de mii)
+    if price_text.count('.') > 0 and price_text.count(',') > 0:
+        # Ex: 1.234,50 -> 1234,50
+        price_text = price_text.replace('.', '')
+        
+    # 3. Standardizăm separatorul zecimal la punct (Ex: 1234,50 -> 1234.50)
+    cleaned_price_str = price_text.replace(',', '.')
+    
+    # 4. Eliminăm orice alt caracter non-numeric sau non-punct
+    cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
+    
+    try:
+        return float(cleaned_price_str)
+    except ValueError:
+        return None
+
+def scrape_moto24_search(product_code):
     """
-    Citește coloanele de diferență (G-H) și trimite o notificare dacă prețul concurentului este mai mic.
+    Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
     """
-    if sheet is None:
-        return
-
+    if not product_code:
+        return None
+        
+    # URL-ul de căutare
+    search_url = f"https://dealer.moto24.ro/?s={product_code}&post_type=product"
+    
     try:
-        all_data = sheet.get_all_values()[1:] 
+        return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
     except Exception as e:
-        print(f"❌ Eroare la citirea datelor pentru alertă: {e}")
-        return
+        print(f"❌ EROARE GENERALĂ la Moto24 (Wrapper/Async): {e}")
+        return None
 
-    alert_products = [] 
-    
-    # Numele site-urilor corespunzător Coloanelor de Diferență (G la H)
-    COMPETITOR_NAMES = ["Moto24", "Nordicamoto"]
-    
-    YOUR_PRICE_INDEX = 2         # Index C (Prețul ATVROM)
-    FIRST_DIFFERENCE_INDEX = 6   # Index G (Coloana G este la indexul 6)
-    
-    for row_data in all_data:
-        if not row_data or len(row_data) < (FIRST_DIFFERENCE_INDEX + len(COMPETITOR_NAMES)):
-            continue
-            
-        product_name = row_data[0] # Coloana A
-        your_price_str = row_data[YOUR_PRICE_INDEX] # Coloana C
-        
-        if not your_price_str or your_price_str.strip() == "":
-            continue
-            
-        competitor_alerts = [] 
-        
-        for i in range(len(COMPETITOR_NAMES)):
-            difference_index = FIRST_DIFFERENCE_INDEX + i
-            competitor_name = COMPETITOR_NAMES[i]
-            
-            try:
-                diff_value_str = row_data[difference_index]
-                
-                if diff_value_str and diff_value_str.strip() != "":
-                    # Sheets returnează numerele formatate regional (ex: 123,45)
-                    difference = float(diff_value_str.replace(",", ".")) 
-                    
-                    if difference < 0 and abs(difference) >= MINIMUM_DIFFERENCE_THRESHOLD:
-                        competitor_alerts.append({
-                            'name': competitor_name,
-                            'difference': abs(difference) 
-                        })
-                        
-            except (ValueError, IndexError, TypeError):
-                continue
-
-        if competitor_alerts:
-            alert_products.append({
-                'product': product_name,
-                'your_price': your_price_str,
-                'alerts': competitor_alerts
-            })
-
-    # --- Generarea și Trimiterea Email-ului ---
-    if alert_products:
-        
-        email_body = "Bună ziua,<br><br>Am detectat următoarele prețuri **mai mici la concurență** pentru echipamente:<br>"
-        email_body += "<table border='1' cellpadding='8' cellspacing='0' style='width: 70%; border-collapse: collapse; font-family: Arial;'>"
-        email_body += "<tr style='background-color: #f2f2f2; font-weight: bold;'><th>Produs</th><th>Cod Produs</th><th>Prețul Tău (RON)</th><th>Concurent</th><th>Diferență (RON)</th></tr>"
-        
-        YOUR_CODE_INDEX = 1 # Coloana B
-        
-        for product_alert in alert_products:
-            is_first_alert = True
-            
-            # Recitirea rândului complet pentru a obține Codul Produsului
-            # Aici presupunem că row_data este încă disponibil, dar cel mai sigur ar fi să-l extragem din nou
-            # Sau să includem Codul Produsului în alert_products
-            
-            # Deoarece nu am re-citit datele, vom folosi un placeholder. 
-            # Pentru simplitate, presupunem că prima linie din sheet (index 1) este Titlu
-            product_code = "N/A" # Va trebui să extrageți codul din coloana B
-            
-            # Căutăm codul produsului în datele brute
-            for row in all_data:
-                if row[0] == product_alert['product']:
-                    product_code = row[YOUR_CODE_INDEX]
-                    break
-            
-            for alert in product_alert['alerts']:
-                if is_first_alert:
-                    row_span = len(product_alert['alerts'])
-                    email_body += f"<tr>"
-                    email_body += f"<td rowspan='{row_span}'><b>{product_alert['product']}</b></td>"
-                    email_body += f"<td rowspan='{row_span}' style='color: blue;'>{product_code}</td>"
-                    email_body += f"<td rowspan='{row_span}' style='color: green;'>{product_alert['your_price']}</td>"
-                    is_first_alert = False
-                else:
-                    email_body += f"<tr>"
-                    
-                email_body += f"<td>{alert['name']}</td>"
-                email_body += f"<td style='color: red; font-weight: bold;'>{alert['difference']:.0f} RON mai mic</td>" 
-                email_body += f"</tr>"
-
-        email_body += "</table>"
-        email_body += "<br>Vă rugăm să revizuiți strategia de preț."
-        
-        subject = f"🚨 [ALERTĂ ECHIPAMENTE] {len(alert_products)} Produse cu Preț Mai Mic la Concurență"
-        
-        send_alert_email(subject, email_body) 
-
-    else:
-        print("\n✅ Nu s-au găsit echipamente cu prețuri mai mici la concurență.")
-
-
-def monitor_and_update_sheet(sheet):
-    """Citește Codurile Produsului (B), extrage prețurile concurenților (D, E) și actualizează Timestamp-ul (F)."""
-    if sheet is None:
-        print("Oprire. Foaia de lucru nu a putut fi inițializată.")
-        return
-
-    print(f"\n--- 1. Scriptul actualizează prețurile concurenților (D-E) și timestamp-ul (F). ---")
-
+async def _scrape_moto24_async_search(search_url, product_code):
+    print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
+    browser = None
     try:
-        all_data = sheet.get_all_values()[1:]
+        browser = await launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox'] 
+        )
+        page = await browser.newPage()
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+        
+        # PASUL 1: Caută produsul și extrage link-ul
+        await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
+        await asyncio.sleep(3) 
+
+        # Selector pentru link-ul produsului. Folosim link-ul care conține codul de produs
+        # Moto24 folosește o structură standard de WooCommerce pentru rezultate
+        link_selector = f'a[href*="{product_code.lower()}"]'
+        
+        # Încercăm să găsim link-ul produsului cel mai relevant (primul)
+        product_link = await page.evaluate(f'document.querySelector("{link_selector}") ? document.querySelector("{link_selector}").href : null')
+
+        if not product_link:
+            print(f"❌ EROARE: Nu a fost găsit un link direct către produsul Moto24 (Cod: {product_code}).")
+            return None
+        
+        # PASUL 2: Navighează la link-ul produsului și extrage prețul
+        print(f"      Navighez la pagina produsului: {product_link}")
+        await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
+        await asyncio.sleep(3) # Așteaptă randarea completă a prețului
+
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+
+        # Selectori pentru pagina de produs (mult mai specifici)
+        price_selectors = [
+            '.single-product-wrapper .woocommerce-Price-amount', # Specific pentru WooCommerce
+            '.product-info-wrap .price',                        # Wrapper general
+            '.summary .price',                                  # General pentru WooCommerce
+        ]
+        
+        price_element = None
+        for selector in price_selectors:
+            price_element = soup.select_one(selector)
+            if price_element:
+                break
+                
+        if price_element:
+            price_text = price_element.get_text(strip=True)
+            price_ron = clean_and_convert_price(price_text)
+            
+            if price_ron is not None:
+                print(f"      ✅ Preț RON extras (Pyppeteer/Pagina Produs): {price_ron} RON")
+                return price_ron
+            
+        print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Moto24.")
+        return None
+
     except Exception as e:
-        print(f"❌ Eroare la citirea datelor din foaie: {e}")
-        return
-
-    updates = []
-    timestamp_val = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    print(f"\n--- 2. Începe procesarea a {len(all_data)} produse ---")
-
-    for row_index, row_data in enumerate(all_data):
-        gsheet_row_num = row_index + 2 
-        product_name = row_data[0] 
-        # Sursa pentru scraping este Coloana B (Cod Produs) -> Index 1
-        product_code_index = 1 
-
-        if len(row_data) <= product_code_index or not row_data[product_code_index]:
-            continue 
-
-        product_code = row_data[product_code_index]
-
-        print(f"\n➡️ Procesează: {product_name} (Cod: {product_code}) la rândul {gsheet_row_num}")
-
-        # Iterăm prin noua listă de mapări
-        for src_col_idx, dest_col_idx, extractor_func, scraper_name in COMPETITOR_MAPPINGS:
-            
-            dest_col_letter = gspread.utils.rowcol_to_a1(1, dest_col_idx).split('1')[0]
-            cell_range = f'{dest_col_letter}{gsheet_row_num}'
-            price = None
-            
-            print(f"    - Scrapează {scraper_name}...")
-            try:
-                # FUNCTIE SCRAPER: Folosește codul de produs ca sursă
-                price = extractor_func(product_code) 
-                
-                if price is not None:
-                    price_str = f"{price:.2f}"
-                    print(f"      ✅ Succes: {price_str} RON. Scris la {cell_range}")
-                else:
-                    price = "N/A (SCRAPE ESUAT)"
-                    print(f"      ❌ EROARE: Extragerea prețului a eșuat pentru {scraper_name}.")
-                    
-            except Exception as e:
-                price = f"🛑 EXCEPȚIE ({type(e).__name__})"
-                print(f"      🛑 EXCEPȚIE la scraping pentru {scraper_name}: {e}")
-                
-            time.sleep(1) 
-            
-            if price is not None:
-                if isinstance(price, (float, int)):
-                    price = f"{price:.2f}"
-                        
-                updates.append({
-                    'range': cell_range,
-                    'values': [[price]]
-                })
-
-    # ----------------------------------------
-    # Scrierea Batch în Google Sheets
-    if updates:
-        
-        timestamp_col_letter = gspread.utils.rowcol_to_a1(1, TIMESTAMP_COL_INDEX).split('1')[0] 
-        timestamp_range = f'{timestamp_col_letter}2:{timestamp_col_letter}{len(all_data) + 1}'
-        timestamp_values = [[timestamp_val] for _ in all_data]
-        
-        updates.append({
-            'range': timestamp_range,
-            'values': timestamp_values
-        })
-        
-        print(f"\n⚡ Se scriu {len(updates)} actualizări și timestamp-ul ({timestamp_val}) în foaie...")
-        
-        try:
-            sheet.batch_update(updates, value_input_option='USER_ENTERED')
-            print("🎉 Toate prețurile concurenților și timestamp-ul au fost actualizate cu succes!")
-        except Exception as e:
-            print(f"❌ EROARE la scrierea în foaia de calcul: {e}")
-    else:
-        print("\nNu au fost găsite coduri de produs de actualizat.")
-
-# ----------------------------------------------------
-## 4. 🏁 Punctul de Intrare
-
-if __name__ == "__main__":
-    sheet_client = setup_sheets_client()
-    
-    if sheet_client:
-        monitor_and_update_sheet(sheet_client)
-        send_price_alerts(sheet_client)
+        print(f"❌ EXCEPȚIE la Pyppeteer/Randare Moto24: {e}")
+        return None
+    finally:
+        if browser:
+            await browser.close()
