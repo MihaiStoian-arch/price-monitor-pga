@@ -1,4 +1,40 @@
-# ... (restul codului, inclusiv funcția clean_and_convert_price și scrape_nordicamoto_search) ...
+from bs4 import BeautifulSoup
+import re
+import asyncio
+from pyppeteer import launch
+import time
+
+def clean_and_convert_price(price_text):
+    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
+    if not price_text:
+        return None
+    
+    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
+    price_text = price_text.replace(' ', '')
+    if price_text.count('.') > 0 and price_text.count(',') > 0:
+        price_text = price_text.replace('.', '')
+    cleaned_price_str = price_text.replace(',', '.')
+    cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
+    
+    try:
+        if cleaned_price_str:
+            return float(cleaned_price_str)
+        return None
+    except ValueError:
+        return None
+
+def scrape_nordicamoto_search(product_code):
+    """
+    Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul.
+    """
+    if not product_code:
+        return None
+    search_url = f"https://www.nordicamoto.ro/?s={product_code}"
+    try:
+        return asyncio.get_event_loop().run_until_complete(_scrape_nordicamoto_async_search(search_url, product_code))
+    except Exception as e:
+        print(f"❌ EROARE GENERALĂ la Nordicamoto (Wrapper/Async): {e}")
+        return None
 
 async def _scrape_nordicamoto_async_search(search_url, product_code):
     print(f"Încerc randarea JS (Nordicamoto) pentru căutarea codului: {product_code}")
@@ -17,7 +53,7 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
 
         link_selector = '.products .product:first-child a[href]'
         
-        # 🛑 CORECȚIE SINTAXĂ JAVASCRIPT FINALĂ
+        # CORECȚIE SINTAXĂ JAVASCRIPT: Ambalat în acolade simple {}
         product_link = await page.evaluate(f'''
             {{
                 const linkElement = document.querySelector('{link_selector}');
@@ -36,8 +72,7 @@ async def _scrape_nordicamoto_async_search(search_url, product_code):
             print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
             return None
         
-        # ... (restul logicii de scraping) ...
-        # (Lăsați neschimbat de aici încolo)
+        # PASUL 2: Navighează la link-ul produsului și extrage prețul
         print(f"      Navighez la pagina produsului: {product_link}")
         await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
         await asyncio.sleep(5) 
