@@ -3,3 +3,5 @@ oauth2client
 requests
 pyppeteer
 beautifulsoup4
+pip install playwright
+playwright install
