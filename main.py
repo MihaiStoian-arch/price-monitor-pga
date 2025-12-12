@@ -19,7 +19,7 @@ from monitor.sites.moto24 import scrape_moto24_search
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
 RECEIVER_EMAILS = [
     'octavian@atvrom.ro', 
-    'vlad.gabura@atvrom.ro'
+    'svmitza89@gmail.com'
 ]
 # ATENȚIE: SMTP_PASSWORD ar trebui setat ca variabilă de mediu în GitHub Actions
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', 'igcu wwbs abit ganm') 
