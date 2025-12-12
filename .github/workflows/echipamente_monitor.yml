@@ -1,47 +1,35 @@
-# Numele workflow-ului
-name: Price Monitor Echipamente Daily Run
+name: Monitorizare Prețuri Echipamente Moto
 
-# Rulează în fiecare zi la ora 02:00 UTC (ajustați la ora dorită)
 on:
-  schedule:
-    - cron: '0 2 * * *' 
+  # Rulează manual din interfața GitHub Actions
   workflow_dispatch:
+  # Rulează zilnic la ora 08:00 UTC (ora României, 10:00/11:00)
+  schedule:
+    - cron: '0 8 * * *'
 
 jobs:
   run_scraper:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # NOU: Instalarea dependințelor de sistem pentru Chromium (Pyppeteer)
-      - name: Install Pyppeteer Dependencies (Chromium)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
-
-      # 3. Instaleaza dependentele din requirements.txt
-      - name: Install Python Dependencies
+      # 1. INSTALARE DEPENDENȚE (din requirements.txt)
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-      # 4. Creeaza fisierul de credentiale din Secret
-      - name: Create Google Sheets Credentials File
-        env:
-          CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS }} # Asigură-te că secretul există în noul repo
-        run: |
-          echo "$CREDENTIALS_JSON" > service_account_credentials.json
-          echo "Public IP is:"
-          curl -s https://ifconfig.me
-          echo ""
 
-      # 5. Ruleaza scriptul Python
-      - name: Run Scraper Script
+      # 2. INSTALARE BROWSERE PLAYWRIGHT (PAS CRITIC)
+      - name: Install Playwright browsers
+        run: playwright install chromium
+
+      # 3. RULEAZĂ SCRIPTUL PRINCIPAL
+      - name: Run main script
         run: python main.py
