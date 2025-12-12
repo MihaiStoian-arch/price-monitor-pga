@@ -260,7 +260,7 @@ def monitor_and_update_sheet(sheet):
         print(f"  - Scrapează Moto24...")
         try:
             # Apelăm funcția de scraping cu codul de produs și funcția de curățare
-            price_moto24 = scrape_moto24(product_code, clean_and_convert_price) 
+            price_moto24 = scrape_moto24_search(product_code, clean_and_convert_price) 
             
             if price_moto24 is not None:
                 price_str = f"{price_moto24:.2f}"
