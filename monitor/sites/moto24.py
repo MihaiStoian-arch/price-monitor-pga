@@ -1,10 +1,10 @@
 from playwright.sync_api import sync_playwright
 
-# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V25 - EXTRAGERE BRUTE FORCE)
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V26 - Finalizare Preț Promoțional)
 def scrape_moto24_search(product_code, clean_and_convert_price):
     """
-    Caută produsul pe Moto24 și extrage prețul.
-    Strategie finală: Așteptare generică + extragere din cel mai larg container de preț.
+    Cauta produsul pe Moto24 și extrage prețul.
+    Logică optimizată pentru a prioritiza prețul redus/promoțional.
     """
     search_url = f"https://www.moto24.ro/module/wkelasticsearch/wkelasticsearchlist?s={product_code}"
     print(f"Încerc Playwright (Moto24) pentru căutarea codului: {product_code}")
@@ -12,6 +12,7 @@ def scrape_moto24_search(product_code, clean_and_convert_price):
     with sync_playwright() as p:
         browser = None
         try:
+            # Setați headless=True pentru producție
             browser = p.chromium.launch(headless=True) 
             context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36')
             page = context.new_page()
@@ -19,56 +20,63 @@ def scrape_moto24_search(product_code, clean_and_convert_price):
             # Navighează la URL-ul de căutare
             page.goto(search_url, wait_until="load", timeout=40000)
             
-            # --- 1. AȘTEPTARE ROBUSTĂ ---
-            # Așteptăm titlul paginii de produs, care ar trebui să apară înainte de preț.
+            # Așteptăm titlul paginii de produs, care ar trebui să apară înainte de preț (15s)
             try:
-                page.wait_for_selector('#product_info, h1.product-title', state="visible", timeout=15000) 
-                print("    ✅ Pagina de produs este randată (Așteptare după titlu).")
+                page.wait_for_selector('h1.product-title, .page-header', state="visible", timeout=15000)
             except:
                 print(f"    ⚠️ Timp de așteptare pentru titlu expirat (15s), continuăm cu extragerea.")
 
-            # --- PASUL 2: VERIFICARE PAGINĂ ȘI EXTRAGERE PREȚ ---
+            # --- PASUL 1: VERIFICARE PAGINĂ ---
             
-            no_results_locator = page.locator('.alert.alert-warning, #main p.products-sort-order').filter(has_text="Nu există produse")
-            if no_results_locator.is_visible():
+            no_results = page.locator('.alert.alert-warning, .no-products').is_visible()
+            if no_results:
                 print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
                 return None
 
+            # --- PASUL 2: EXTRAGERE PREȚ (PRIORITIZARE) ---
+
+            # Selectori pentru preț. ORDONARE: Promoțional > Normal > Metadata
+            price_selectors = [
+                # 1. Preț final/promoțional (clase comune PrestaShop/module)
+                '.current-price-value', 
+                '.product-prices .current-price-value',
+                '.price-final',
+                
+                # 2. Preț normal (fallback dacă nu e promoție)
+                '.product-price',
+                '.current-price',
+                
+                # 3. Selector larg (prinde tot textul, dar poate necesita curățare mai strictă)
+                '#product-prices .price', 
+                
+                # 4. Selector bazat pe schema.org
+                '[itemprop="price"]',
+            ]
+
+            price_element_locator = None
             price_text = None
-            price_ron = None
-
-            # STRATEGIA A (Extragere Brute Force): Extragem textul din cel mai larg container de preț (CSS + ID).
-            # Acesta ar trebui să cuprindă atât prețul normal, cât și pe cel promoțional.
-            price_container_locator = page.locator('#product-prices, .product-prices, .price-main').first
             
-            if price_container_locator.count() > 0:
-                # Folosim text_content() pentru a prinde tot textul, inclusiv din sub-elemente
-                price_text = price_container_locator.text_content().strip()
-
-            # STRATEGIA B (Fallback Metada/Itemprop)
-            if price_text is None or len(price_text) < 3:
-                locator_price_content = page.locator('[itemprop="price"]').first
-                if locator_price_content.count() > 0:
-                    # Preferăm valoarea din atributul content (dacă există)
-                    price_content_attr = locator_price_content.get_attribute('content')
-                    if price_content_attr:
-                        price_text = price_content_attr
-                        
-            
-            # --- PASUL 3: CONVERSIE ȘI VALIDARE ---
-            if price_text:
-                price_ron = clean_and_convert_price(price_text)
+            for selector in price_selectors:
+                locator = page.locator(selector).first
                 
-                if price_ron is not None:
-                    # Pragul de 50 RON ramane pentru a filtra valorile eronate de tip 2.947
-                    if price_ron >= 50: 
-                        print(f"      ✅ Preț Moto24 extras: {price_ron:.2f} RON (Din text: '{price_text}')")
-                        return price_ron
+                if locator.count() > 0:
+                    # Dacă găsim o valoare în itemprop="price", încercăm să extragem atributul 'content'
+                    if selector == '[itemprop="price"]':
+                        price_text = locator.get_attribute('content')
                     else:
-                         print(f"      ⚠️ Preț sub prag ({price_ron:.3f} RON). Extragerea prețului complet a eșuat.")
-                         return None
-                
-            print(f"❌ EROARE: Prețul nu a putut fi extras sau convertit (Text extras: {price_text}).")
+                        price_text = locator.inner_text().strip()
+                        
+                    # Încercăm conversia imediată pentru a vedea dacă valoarea este validă
+                    price_ron = clean_and_convert_price(price_text)
+                    
+                    # Verificăm dacă prețul este rezonabil (pentru a evita valorile parțiale tip 2.947)
+                    if price_ron is not None and price_ron >= 50:
+                        print(f"      ✅ Preț Moto24 extras (Selector: {selector}): {price_ron:.2f} RON (Din text: '{price_text}')")
+                        return price_ron
+                    
+                    # Dacă prețul extras este valid, dar sub prag (e.g. un pret 5.00), nu ne bazam pe el
+                    
+            print(f"❌ EROARE: Prețul nu a putut fi extras sau nu este valid (Text extras: {price_text}).")
             return None
 
         except Exception as e:
