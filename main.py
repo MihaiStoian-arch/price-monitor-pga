@@ -169,7 +169,7 @@ def send_price_alerts(sheet):
     print("\n--- 3. Verificare Alerte (Citire Coloane G și H) ---")
     try:
         # Citim toate datele necesare (A-H). Presupunem că citim până la H (index 7)
-        all_data = sheet.get_all_values()[1:] 
+        all_data = sheet.get_all_values()[1:]  
     except Exception as e:
         print(f"❌ Eroare la citirea datelor pentru alertă: {e}")
         return
@@ -181,12 +181,17 @@ def send_price_alerts(sheet):
         (DIFFERENCE_NORDICAMOTO_INDEX, "Nordicamoto", PRICE_NORDICAMOTO_INDEX)
     ]
     
+    # Adăugăm indexul pentru Codul Produsului (Coloana B)
+    PRODUCT_CODE_INDEX = 1 # Presupunând că indexul 1 corespunde Coloanei B (Cod Produs)
+
     for row_data in all_data:
         
+        # Trebuie să ne asigurăm că rândul are destule coloane pentru toți indexii folosiți
         if not row_data or len(row_data) < 8: 
             continue
             
-        product_title = row_data[TITLE_PRODUS_INDEX]
+        product_title = row_data[TITLE_PRODUS_INDEX] # Coloana A (index 0)
+        product_code = row_data[PRODUCT_CODE_INDEX]   # NOU: Coloana B (index 1)
         atvrom_price_str = row_data[LAST_PRICE_ATVROM_INDEX]
         
         for diff_index, competitor_name, price_index in DIFFERENCE_COLUMNS:
@@ -205,6 +210,7 @@ def send_price_alerts(sheet):
                         
                         alert_products.append({
                             'product': product_title,
+                            'code': product_code,  # NOU: Adăugat codul
                             'your_price': atvrom_price_str,
                             'competitor': competitor_name,
                             'competitor_price': competitor_price_str,
@@ -219,11 +225,16 @@ def send_price_alerts(sheet):
         
         email_body = "Bună ziua,<br><br>Am detectat următoarele prețuri **mai mici la concurență**:<br>"
         email_body += "<table border='1' cellpadding='8' cellspacing='0' style='width: 90%; border-collapse: collapse; font-family: Arial;'>"
-        email_body += "<tr style='background-color: #f2f2f2; font-weight: bold;'><th>Produs</th><th>Prețul Tău (C)</th><th>Concurent</th><th>Prețul Concurent (D/E)</th><th>Diferență (RON)</th></tr>"
+        
+        # NOU: Actualizăm antetul tabelului
+        email_body += "<tr style='background-color: #f2f2f2; font-weight: bold;'><th>Produs (Cod)</th><th>Prețul Tău (C)</th><th>Concurent</th><th>Prețul Concurent (D/E)</th><th>Diferență (RON)</th></tr>"
         
         for alert in alert_products:
             email_body += f"<tr>"
-            email_body += f"<td><b>{alert['product']}</b></td>"
+            
+            # NOU: Includem Codul Produsului în prima coloană
+            email_body += f"<td><b>{alert['product']}</b><br><span style='font-size: 0.9em;'>({alert['code']})</span></td>" 
+            
             email_body += f"<td style='color: green;'>{alert['your_price']}</td>"
             email_body += f"<td>{alert['competitor']}</td>"
             email_body += f"<td style='color: red;'>{alert['competitor_price']}</td>"
