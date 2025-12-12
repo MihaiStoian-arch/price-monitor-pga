@@ -1,132 +1,96 @@
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import re
-import asyncio
-from pyppeteer import launch
-import time
+from bs4 import BeautifulSoup
 
+# Funcția de curățare rămâne neschimbată
 def clean_and_convert_price(price_text):
-    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
     if not price_text: return None
-    
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     price_text = price_text.replace(' ', '')
     if price_text.count('.') > 0 and price_text.count(',') > 0: price_text = price_text.replace('.', '')
     cleaned_price_str = price_text.replace(',', '.')
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
-    
     try:
         if cleaned_price_str: return float(cleaned_price_str)
         return None
     except ValueError: return None
 
-# FUNCTIA WRAPPER
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT
 def scrape_nordicamoto_search(product_code):
     """
-    Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul.
+    Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul folosind Playwright.
     """
-    if not product_code: return None
-    # URL CORECTAT V9
     search_url = f"https://www.nordicamoto.ro/search?search={product_code}"
-    try:
-        return asyncio.get_event_loop().run_until_complete(_scrape_nordicamoto_async_search(search_url, product_code))
-    except Exception as e:
-        print(f"❌ EROARE GENERALĂ la Nordicamoto (Wrapper/Async): {e}")
-        return None
+    print(f"Încerc Playwright (Nordicamoto) pentru căutarea codului: {product_code}")
+    
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(search_url, wait_until="domcontentloaded", timeout=40000)
 
-# FUNCTIA ASINCRONĂ PRINCIPALĂ (NORDICAMOTO - V17: Extracție Link Extremă)
-async def _scrape_nordicamoto_async_search(search_url, product_code):
-    print(f"Încerc randarea JS (Nordicamoto) pentru căutarea codului: {product_code}")
-    browser = None
-    try:
-        browser = await launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'] 
-        )
-        page = await browser.newPage()
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        
-        # PASUL 1: Caută produsul și extrage link-ul
-        await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(8) 
-
-        # Logica de căutare a link-ului (V17: Caută cel mai bun link care conține codul produsului, indiferent de clasă)
-        product_link = await page.evaluate('''
-            (code) => {
-                const codeUpper = code.toUpperCase();
-                
-                // 1. Caută orice link A care conține codul în href și are o lungime rezonabilă (link de produs)
-                const linkElement = Array.from(document.querySelectorAll('a[href]'))
-                    .find(a => 
-                        a.href.includes(codeUpper) && a.href.length > 50
-                    );
-
-                if (linkElement) {
-                    return linkElement.href;
-                }
-                
-                // 2. Caută link-ul produsului care conține textul codului
-                const textLink = Array.from(document.querySelectorAll('a[href]'))
-                    .find(a => 
-                        a.innerText && a.innerText.toUpperCase().includes(codeUpper) && a.href.length > 50
-                    );
-                
-                if (textLink) {
-                    return textLink.href;
-                }
-                
-                // Verificăm dacă pagina de căutare este goală
-                const noResults = document.querySelector('.alert.alert-warning, .no-results, .woocommerce-info, #main-wrapper .not-found'); 
-                if (noResults) {
-                    return "NO_RESULTS_FOUND"; 
-                }
-                
-                return null;
-            }
-        ''', product_code) 
-
-        if product_link == "NO_RESULTS_FOUND":
-            print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
-            return None
-        
-        # *CORECTIE CRITICĂ:* Dacă nu găsește un link valid, returnează None, nu continuă
-        if not product_link or product_link == search_url:
-            print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
-            return None
-        
-        # PASUL 2: Navighează la link-ul produsului și extrage prețul
-        print(f"      Navighez la pagina produsului: {product_link}")
-        await page.goto(product_link, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(5) 
-
-        content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
-
-        # Selectori robusti pentru pagina de produs
-        price_selectors = [
-            '#center_column .price', 
-            '.price .current-price', 
-            '.summary .woocommerce-Price-amount', 
-            'p.price', 
-            '[itemprop="price"]', 
-        ]
-        
-        price_element = None
-        for selector in price_selectors:
-            price_element = soup.select_one(selector)
-            if price_element:
-                break
-        
-        if price_element:
-            price_text = price_element.get_text(strip=True)
-            price_ron = clean_and_convert_price(price_text)
+            # --- PASUL 1: EXTRAGERE LINK PRODUS ---
             
-            if price_ron is not None:
-                print(f"      ✅ Preț Nordicamoto extras: {price_ron} RON")
-                return price_ron
-            
-        print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Nordicamoto.")
-        return None
+            # Așteptăm ca lista de produse să apară (implicit auto-wait)
+            page.wait_for_selector('.product_list', timeout=10000)
 
-    finally:
-        if browser:
-            await browser.close()
+            # Selector Playwright: Găsește primul link de produs din lista de rezultate
+            product_link_selector = f'a[href*="{product_code.lower()}"], .product_list .product-name a, .product_list .product-image a'
+            
+            product_link_element = page.locator(product_link_selector).first
+            
+            # Verificăm dacă există rezultate vizibile
+            if not product_link_element.is_visible():
+                no_results = page.locator('.alert.alert-warning, .no-results').is_visible()
+                if no_results:
+                    print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
+                    return None
+                
+                print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
+                return None
+
+            product_link = product_link_element.get_attribute("href")
+            
+            if not product_link:
+                 print(f"❌ EROARE: Link de produs găsit dar URL-ul este invalid (Nordicamoto).")
+                 return None
+
+            # --- PASUL 2: NAVIGARE ȘI EXTRAGERE PREȚ ---
+            print(f"      Navighez la pagina produsului: {product_link}")
+            
+            page.goto(product_link, wait_until="domcontentloaded", timeout=40000)
+
+            # Selectori pentru preț pe pagina de produs (auto-wait)
+            price_selectors = [
+                '#center_column .price', 
+                '.product-price',
+                '.summary .woocommerce-Price-amount', 
+                'p.price', 
+                '[itemprop="price"]', 
+            ]
+
+            price_element_locator = None
+            for selector in price_selectors:
+                # Încercăm să găsim un locator
+                locator = page.locator(selector)
+                if locator.count() > 0:
+                    price_element_locator = locator.first
+                    break
+            
+            if price_element_locator:
+                # Așteptăm ca elementul să fie vizibil și extragem textul
+                price_text = price_element_locator.inner_text()
+                price_ron = clean_and_convert_price(price_text)
+                
+                if price_ron is not None:
+                    print(f"      ✅ Preț Nordicamoto extras: {price_ron} RON")
+                    return price_ron
+                
+            print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Nordicamoto.")
+            return None
+
+        except Exception as e:
+            print(f"❌ EROARE GENERALĂ Playwright (Nordicamoto): {e}")
+            return None
+        finally:
+            browser.close()
