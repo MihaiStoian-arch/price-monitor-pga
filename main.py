@@ -39,7 +39,7 @@ WORKSHEET_NAME = 'Echipamente HJC'
 # D=4 (Preț Moto24), E=5 (Preț Nordicamoto), F=6 (Data Scrape)
 # G=7 (Diferența Moto24), H=8 (Diferența Nordicamoto)
 
-# Harta: Folosim doar pentru referință, nu pentru preluarea funcțiilor (pentru a evita IndexError)
+# Harta: Folosim doar pentru referință
 SCRAPER_COORDS = {
     2: [4, scrape_moto24_search],        # B -> D (Moto24) 
     2: [5, scrape_nordicamoto_search], # B -> E (Nordicamoto) 
@@ -278,7 +278,7 @@ def monitor_and_update_sheet(sheet):
 
         print(f"\n➡️ Procesează: Codul {product_code} la rândul {gsheet_row_num}")
         
-        # ⬅️ CORECTAT: Preluarea funcțiilor de scraping direct
+        # Preluarea funcțiilor de scraping direct
         scraper_info = [
             (scrape_moto24_search, 4),      # Moto24 (Coloana D)
             (scrape_nordicamoto_search, 5)  # Nordicamoto (Coloana E)
@@ -292,8 +292,8 @@ def monitor_and_update_sheet(sheet):
             
             print(f"  - Scrapează {site_name}...")
             try:
-                # Apelăm funcția de scraping
-                price_float = scraper_func(product_code) 
+                # 🏆 CORECTAT: Apelăm funcția cu ambele argumente necesare
+                price_float = scraper_func(product_code, clean_and_convert_price) 
                 
                 if price_float is not None:
                     # Asigurăm formatarea corectă pentru GSheets
