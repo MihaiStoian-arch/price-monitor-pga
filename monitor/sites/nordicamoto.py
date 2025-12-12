@@ -1,6 +1,6 @@
 from playwright.sync_api import sync_playwright
 
-# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V20)
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V21 - Selector Mai Generic)
 def scrape_nordicamoto_search(product_code, clean_and_convert_price):
     """
     Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul folosind Playwright.
@@ -11,23 +11,38 @@ def scrape_nordicamoto_search(product_code, clean_and_convert_price):
     with sync_playwright() as p:
         browser = None
         try:
-            # Setează un User Agent standard pentru a evita blocajele
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36')
             page = context.new_page()
             
             page.goto(search_url, wait_until="load", timeout=40000)
 
-            # --- PASUL 1: EXTRAGERE LINK PRODUS ---
+            # --- PASUL 1: EXTRAGERE LINK PRODUS (SELECTOR AGRESIV) ---
             
-            # Selector Playwright: Găsește primul link relevant care conține codul în URL (cel mai fiabil)
-            product_link_selector = f'a[href*="{product_code.lower()}"]'
+            # Selector V21: Încearcă să găsească link-ul imaginii/titlului primului produs din listă,
+            # fără a se baza pe codul produsului în URL, ci pe structura paginii.
+            product_link_selector = 'ul.product_list a, .products > div:first-child a, .product-container:first-child a'
             
+            product_link_element = None
             try:
-                # Așteptăm elementul să apară și să fie vizibil
-                product_link_element = page.wait_for_selector(product_link_selector, state="visible", timeout=10000)
-            except:
-                # Fallback: Verificăm dacă pagina este goală
+                # Așteptăm ca lista de produse să se încarce
+                page.wait_for_selector('ul.product_list, .products', timeout=10000)
+                
+                # Căutăm link-ul
+                link_locator = page.locator(product_link_selector)
+                if link_locator.count() > 0:
+                     product_link_element = link_locator.first
+                
+            except Exception:
+                pass # Dacă lista nu se încarcă în 10s, continuăm cu verificarea paginii goale
+
+            if product_link_element and product_link_element.is_visible():
+                product_link = product_link_element.get_attribute("href")
+            else:
+                product_link = None
+            
+            # Verificare pagină goală
+            if not product_link:
                 no_results = page.locator('.alert.alert-warning, .no-results').is_visible()
                 if no_results:
                     print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
@@ -36,18 +51,12 @@ def scrape_nordicamoto_search(product_code, clean_and_convert_price):
                 print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
                 return None
 
-            product_link = product_link_element.get_attribute("href")
-            
-            if not product_link:
-                 print(f"❌ EROARE: Link de produs găsit dar URL-ul este invalid (Nordicamoto).")
-                 return None
-
             # --- PASUL 2: NAVIGARE ȘI EXTRAGERE PREȚ ---
             print(f"      Navighez la pagina produsului: {product_link}")
             
             page.goto(product_link, wait_until="load", timeout=40000)
 
-            # Selectori pentru preț (Auto-wait activat)
+            # Selectori pentru preț (aceiași, Playwright gestionează auto-wait)
             price_selectors = [
                 '#center_column .price', 
                 '.product-price',
@@ -64,7 +73,6 @@ def scrape_nordicamoto_search(product_code, clean_and_convert_price):
                     break
             
             if price_element_locator:
-                # Așteptăm ca elementul să aibă conținut text
                 price_text = price_element_locator.inner_text()
                 price_ron = clean_and_convert_price(price_text)
                 
