@@ -12,11 +12,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ⚠️ IMPORTĂRILE FUNCȚIILOR DE SCRAPING
+# Presupunem ca acestea sunt in locatiile corecte: monitor.sites.nordicamoto si monitor.sites.moto24
 from monitor.sites.nordicamoto import scrape_nordicamoto_search
 from monitor.sites.moto24 import scrape_moto24_search 
 
 # --- CONFIGURARE EMAIL ---
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
+# Lista de destinatari
 RECEIVER_EMAILS = [
     'octavian@atvrom.ro',
     'vlad.gabura@atvrom.ro',
@@ -43,11 +45,8 @@ WORKSHEET_NAME = 'Echipamente HJC'
 # D=4 (Preț Moto24), E=5 (Preț Nordicamoto), F=6 (Data Scrape)
 # G=7 (Diferența Moto24), H=8 (Diferența Nordicamoto)
 
-# Harta: Folosim doar pentru referință
-SCRAPER_COORDS = {
-    2: [4, scrape_moto24_search],        # B -> D (Moto24) 
-    2: [5, scrape_nordicamoto_search], # B -> E (Nordicamoto) 
-}
+# Harta: Folosim doar pentru referință (Nota: Structura ar trebui să fie un dicționar cu chei unice)
+# SCRAPER_COORDS = { ... } # Lăsat așa cum este, dar nu este folosit în logica actuală
 
 # Coloana pentru Timestamp-ul (Coloana F)
 TIMESTAMP_COL_INDEX = 6
@@ -67,23 +66,19 @@ def clean_and_convert_price(price_text):
         return None
     
     # Curățare inițială (Lei/RON, spații)
-    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace(' ', '').strip()
+    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace(' ', '').strip()
 
     # Elimină caracterele non-numerice/non-separator
-    # (Păstrăm doar cifre, virgulă, punct)
     price_text = re.sub(r'[^\d.,]', '', price_text)
     
     # --- LOGICA NOUĂ PENTRU SEPARATOARE ---
-    
     # 1. Dacă textul CONȚINE virgulă, tratăm punctul ca separator de mii.
-    # Ex: '2.947,50' -> '2947,50'
     if ',' in price_text:
         price_text = price_text.replace('.', '')
         # Standardizăm separatorul zecimal la punct
         cleaned_price_str = price_text.replace(',', '.')
     
     # 2. Dacă textul NU CONȚINE virgulă, dar CONȚINE punct, tratăm punctul ca separator de mii.
-    # Ex: '2.947' -> '2947'
     elif '.' in price_text:
         cleaned_price_str = price_text.replace('.', '')
     
@@ -138,20 +133,26 @@ def setup_sheets_client():
         return None
     
 def send_alert_email(subject, body):
-    """Trimite un email folosind SMTP."""
+    """Trimite un email folosind SMTP. CORECTAT: Gestionează lista de destinatari."""
     try:
+        # CORECTIE 1: Formatăm lista de email-uri ca un șir de caractere separat prin virgulă pentru antetul 'To:'
+        receiver_string = ", ".join(RECEIVER_EMAILS)
+        
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
-        msg['To'] = RECEIVER_EMAILS
+        msg['To'] = receiver_string # Folosim șirul de caractere (string) aici
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html')) 
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SENDER_EMAIL, SMTP_PASSWORD) 
+        
+        # CORECTIE 2: Folosim lista originală (list) pentru funcția sendmail, care o acceptă
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAILS, msg.as_string())
+        
         server.quit()
-        print(f"✔️ Notificare trimisă cu succes către {RECEIVER_EMAILS}")
+        print(f"✔️ Notificare trimisă cu succes către {receiver_string}")
         return True
     except Exception as e:
         print(f"❌ Eroare la trimiterea email-ului: {e}")
@@ -181,17 +182,16 @@ def send_price_alerts(sheet):
         (DIFFERENCE_NORDICAMOTO_INDEX, "Nordicamoto", PRICE_NORDICAMOTO_INDEX)
     ]
     
-    # Adăugăm indexul pentru Codul Produsului (Coloana B)
-    PRODUCT_CODE_INDEX = 1 # Presupunând că indexul 1 corespunde Coloanei B (Cod Produs)
+    # Rămâne neschimbat: Codul Produsului este extras și inclus în alert_products
+    PRODUCT_CODE_INDEX = 1 
 
     for row_data in all_data:
         
-        # Trebuie să ne asigurăm că rândul are destule coloane pentru toți indexii folosiți
         if not row_data or len(row_data) < 8: 
             continue
             
-        product_title = row_data[TITLE_PRODUS_INDEX] # Coloana A (index 0)
-        product_code = row_data[PRODUCT_CODE_INDEX]   # NOU: Coloana B (index 1)
+        product_title = row_data[TITLE_PRODUS_INDEX] 
+        product_code = row_data[PRODUCT_CODE_INDEX]   
         atvrom_price_str = row_data[LAST_PRICE_ATVROM_INDEX]
         
         for diff_index, competitor_name, price_index in DIFFERENCE_COLUMNS:
@@ -200,17 +200,15 @@ def send_price_alerts(sheet):
             
             try:
                 if diff_value_str and diff_value_str.strip() != "":
-                    # Sheets returnează numerele formatate regional. Convertim ',' la '.'
                     difference = float(diff_value_str.replace(",", ".")) 
                     
-                    # Logica: Valoarea este negativă (competitorul e mai ieftin) ȘI depășește pragul
                     if difference < 0 and abs(difference) >= MINIMUM_DIFFERENCE_THRESHOLD:
                         
                         competitor_price_str = row_data[price_index]
                         
                         alert_products.append({
                             'product': product_title,
-                            'code': product_code,  # NOU: Adăugat codul
+                            'code': product_code,  # Păstrat: Codul Produsului
                             'your_price': atvrom_price_str,
                             'competitor': competitor_name,
                             'competitor_price': competitor_price_str,
@@ -226,13 +224,13 @@ def send_price_alerts(sheet):
         email_body = "Bună ziua,<br><br>Am detectat următoarele prețuri **mai mici la concurență**:<br>"
         email_body += "<table border='1' cellpadding='8' cellspacing='0' style='width: 90%; border-collapse: collapse; font-family: Arial;'>"
         
-        # NOU: Actualizăm antetul tabelului
+        # Păstrat: Antetul tabelului include Codul
         email_body += "<tr style='background-color: #f2f2f2; font-weight: bold;'><th>Produs (Cod)</th><th>Prețul Tău (C)</th><th>Concurent</th><th>Prețul Concurent (D/E)</th><th>Diferență (RON)</th></tr>"
         
         for alert in alert_products:
             email_body += f"<tr>"
             
-            # NOU: Includem Codul Produsului în prima coloană
+            # Păstrat: Includerea Codului sub Numele Produsului
             email_body += f"<td><b>{alert['product']}</b><br><span style='font-size: 0.9em;'>({alert['code']})</span></td>" 
             
             email_body += f"<td style='color: green;'>{alert['your_price']}</td>"
@@ -286,7 +284,6 @@ def monitor_and_update_sheet(sheet):
 
         print(f"\n➡️ Procesează: Codul {product_code} la rândul {gsheet_row_num}")
         
-        # Preluarea funcțiilor de scraping direct
         scraper_info = [
             (scrape_moto24_search, 4),      # Moto24 (Coloana D)
             (scrape_nordicamoto_search, 5)  # Nordicamoto (Coloana E)
@@ -300,7 +297,7 @@ def monitor_and_update_sheet(sheet):
             
             print(f"  - Scrapează {site_name}...")
             try:
-                # 🏆 CORECTAT: Apelăm funcția cu ambele argumente necesare
+                # Se presupune că funcțiile de scraping (din import) acceptă și funcția de curățare
                 price_float = scraper_func(product_code, clean_and_convert_price) 
                 
                 if price_float is not None:
