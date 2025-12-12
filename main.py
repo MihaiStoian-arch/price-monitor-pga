@@ -62,42 +62,35 @@ DIFFERENCE_NORDICAMOTO_INDEX = 7 # Coloana H (pentru alerte)
 
 
 def clean_and_convert_price(price_text):
-    """
-    Curăță textul prețului și îl convertește în float, gestionând 
-    formatele regionale (spații/puncte pentru mii, virgulă pentru zecimale sau mii).
-    """
     if not price_text:
         return None
     
-    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
-    
-    # Eliminăm spațiile folosite ca separator de mii (e.g., 2 947)
-    price_text = price_text.replace(' ', '')
-    
-    # 1. Gestionăm virgula:
-    if ',' in price_text:
-        parts = price_text.split(',')
-        
-        # Dacă există două părți ȘI partea de după virgulă are mai mult de 2 cifre (e.g., 2,947)
-        # sau nu există puncte (separator de mii), virgula este un separator de mii.
-        # În acest caz, o eliminăm (2,947 -> 2947).
-        if len(parts) == 2 and (len(parts[1]) > 2 or '.' not in price_text):
-            price_text = price_text.replace(',', '')
-        
-        # Altfel, dacă virgula este separator zecimal (e.g., 2947,50), o transformăm în punct.
-        else:
-            price_text = price_text.replace(',', '.')
+    # Curățare inițială (Lei/RON, spații)
+    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace(' ', '').strip()
 
-    # 2. Eliminăm punctele care au rămas (sunt separatori de mii)
-    # Ex: 2.947 -> 2947
-    # Dacă prețul conține deja un punct (acum zecimal), nu mai eliminăm puncte.
-    if price_text.count('.') > 1:
-        # Dacă există mai mult de un punct, eliminăm primul (separator de mii)
-        price_text = price_text.replace('.', '', price_text.count('.') - 1)
+    # Elimină caracterele non-numerice/non-separator
+    # (Păstrăm doar cifre, virgulă, punct)
+    price_text = re.sub(r'[^\d.,]', '', price_text)
     
-    # Eliminăm orice alt caracter non-numeric sau non-punct
-    cleaned_price_str = re.sub(r'[^\d.]', '', price_text)
+    # --- LOGICA NOUĂ PENTRU SEPARATOARE ---
     
+    # 1. Dacă textul CONȚINE virgulă, tratăm punctul ca separator de mii.
+    # Ex: '2.947,50' -> '2947,50'
+    if ',' in price_text:
+        price_text = price_text.replace('.', '')
+        # Standardizăm separatorul zecimal la punct
+        cleaned_price_str = price_text.replace(',', '.')
+    
+    # 2. Dacă textul NU CONȚINE virgulă, dar CONȚINE punct, tratăm punctul ca separator de mii.
+    # Ex: '2.947' -> '2947'
+    elif '.' in price_text:
+        cleaned_price_str = price_text.replace('.', '')
+    
+    # 3. Fără separatori, doar cifre.
+    else:
+        cleaned_price_str = price_text
+
+    # --- CONVERSIE FINALĂ ---
     try:
         if cleaned_price_str:
             return float(cleaned_price_str)
