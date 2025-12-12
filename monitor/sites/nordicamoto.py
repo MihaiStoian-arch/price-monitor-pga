@@ -1,9 +1,9 @@
 from playwright.sync_api import sync_playwright
 
-# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V21 - Selector Mai Generic)
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V23 - Extracție Extrem de Agresivă, Fără Căutare Explicită de Listă)
 def scrape_nordicamoto_search(product_code, clean_and_convert_price):
     """
-    Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul folosind Playwright.
+    Caută produsul pe Nordicamoto și extrage prețul bazându-se pe elemente generale.
     """
     search_url = f"https://www.nordicamoto.ro/search?search={product_code}"
     print(f"Încerc Playwright (Nordicamoto) pentru căutarea codului: {product_code}")
@@ -17,70 +17,44 @@ def scrape_nordicamoto_search(product_code, clean_and_convert_price):
             
             page.goto(search_url, wait_until="load", timeout=40000)
 
-            # --- PASUL 1: EXTRAGERE LINK PRODUS (SELECTOR AGRESIV) ---
-            
-            # Selector V21: Încearcă să găsească link-ul imaginii/titlului primului produs din listă,
-            # fără a se baza pe codul produsului în URL, ci pe structura paginii.
-            product_link_selector = 'ul.product_list a, .products > div:first-child a, .product-container:first-child a'
-            
-            product_link_element = None
-            try:
-                # Așteptăm ca lista de produse să se încarce
-                page.wait_for_selector('ul.product_list, .products', timeout=10000)
-                
-                # Căutăm link-ul
-                link_locator = page.locator(product_link_selector)
-                if link_locator.count() > 0:
-                     product_link_element = link_locator.first
-                
-            except Exception:
-                pass # Dacă lista nu se încarcă în 10s, continuăm cu verificarea paginii goale
+            # Așteptăm cel puțin 5 secunde, lăsând timp pentru orice JS să randeze
+            page.wait_for_timeout(5000)
 
-            if product_link_element and product_link_element.is_visible():
-                product_link = product_link_element.get_attribute("href")
-            else:
-                product_link = None
-            
-            # Verificare pagină goală
-            if not product_link:
-                no_results = page.locator('.alert.alert-warning, .no-results').is_visible()
-                if no_results:
-                    print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
-                    return None
-                
-                print(f"❌ EROARE: Nu a fost găsit un link de produs în rezultatele căutării Nordicamoto (Cod: {product_code}).")
+            # 1. Verificare pagină goală
+            no_results = page.locator('.alert.alert-warning, .no-results').is_visible()
+            if no_results:
+                print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
                 return None
-
-            # --- PASUL 2: NAVIGARE ȘI EXTRAGERE PREȚ ---
-            print(f"      Navighez la pagina produsului: {product_link}")
             
-            page.goto(product_link, wait_until="load", timeout=40000)
-
-            # Selectori pentru preț (aceiași, Playwright gestionează auto-wait)
+            # 2. Selectori pentru preț (caută oriunde pe pagină, asociat cu codul)
             price_selectors = [
-                '#center_column .price', 
-                '.product-price',
-                '.summary .woocommerce-Price-amount', 
-                'p.price', 
-                '[itemprop="price"]', 
+                # Caută prețul în jurul unui element care conține codul produsului
+                f':text("{product_code}") >> xpath=./following::p[contains(@class, "price")]', 
+                f':text("{product_code}") >> xpath=./following::span[contains(@class, "amount")]',
+                
+                # Caută cel mai general preț vizibil pe pagină
+                '.price .amount, p.price .amount, .woocommerce-Price-amount',
+                
+                # Caută orice text care arată ca un preț RON
+                'body :text("RON"):visible',
             ]
 
             price_element_locator = None
+            price_text = None
+            
+            # Iterație pe selectori
             for selector in price_selectors:
                 locator = page.locator(selector).first
-                if locator.count() > 0:
-                    price_element_locator = locator
-                    break
+                if locator.count() > 0 and locator.is_visible():
+                    price_text = locator.inner_text()
+                    # Dacă prețul a fost găsit cu un selector, încercăm să-l curățăm
+                    price_ron = clean_and_convert_price(price_text)
+                    if price_ron is not None:
+                        print(f"      ✅ Preț Nordicamoto extras (V23 - Selector: {selector}): {price_ron} RON")
+                        return price_ron
             
-            if price_element_locator:
-                price_text = price_element_locator.inner_text()
-                price_ron = clean_and_convert_price(price_text)
-                
-                if price_ron is not None:
-                    print(f"      ✅ Preț Nordicamoto extras: {price_ron} RON")
-                    return price_ron
-                
-            print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Nordicamoto.")
+            # Dacă am ajuns aici, prețul nu a fost găsit sau curățat
+            print(f"❌ EROARE: Nu a fost găsit prețul (sau link-ul) pentru codul: {product_code}.")
             return None
 
         except Exception as e:
