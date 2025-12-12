@@ -1,10 +1,7 @@
 from playwright.sync_api import sync_playwright
-import re
-from bs4 import BeautifulSoup
 
-
-# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT
-def scrape_nordicamoto_search(product_code):
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V20)
+def scrape_nordicamoto_search(product_code, clean_and_convert_price):
     """
     Caută produsul pe Nordicamoto, navighează pe pagina produsului și extrage prețul folosind Playwright.
     """
@@ -12,23 +9,25 @@ def scrape_nordicamoto_search(product_code):
     print(f"Încerc Playwright (Nordicamoto) pentru căutarea codului: {product_code}")
     
     with sync_playwright() as p:
+        browser = None
         try:
+            # Setează un User Agent standard pentru a evita blocajele
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(search_url, wait_until="domcontentloaded", timeout=40000)
+            context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36')
+            page = context.new_page()
+            
+            page.goto(search_url, wait_until="load", timeout=40000)
 
             # --- PASUL 1: EXTRAGERE LINK PRODUS ---
             
-            # Așteptăm ca lista de produse să apară (implicit auto-wait)
-            page.wait_for_selector('.product_list', timeout=10000)
-
-            # Selector Playwright: Găsește primul link de produs din lista de rezultate
-            product_link_selector = f'a[href*="{product_code.lower()}"], .product_list .product-name a, .product_list .product-image a'
+            # Selector Playwright: Găsește primul link relevant care conține codul în URL (cel mai fiabil)
+            product_link_selector = f'a[href*="{product_code.lower()}"]'
             
-            product_link_element = page.locator(product_link_selector).first
-            
-            # Verificăm dacă există rezultate vizibile
-            if not product_link_element.is_visible():
+            try:
+                # Așteptăm elementul să apară și să fie vizibil
+                product_link_element = page.wait_for_selector(product_link_selector, state="visible", timeout=10000)
+            except:
+                # Fallback: Verificăm dacă pagina este goală
                 no_results = page.locator('.alert.alert-warning, .no-results').is_visible()
                 if no_results:
                     print(f"❌ PAGINĂ GOALĂ: Căutarea Nordicamoto pentru codul '{product_code}' nu a returnat produse.")
@@ -46,9 +45,9 @@ def scrape_nordicamoto_search(product_code):
             # --- PASUL 2: NAVIGARE ȘI EXTRAGERE PREȚ ---
             print(f"      Navighez la pagina produsului: {product_link}")
             
-            page.goto(product_link, wait_until="domcontentloaded", timeout=40000)
+            page.goto(product_link, wait_until="load", timeout=40000)
 
-            # Selectori pentru preț pe pagina de produs (auto-wait)
+            # Selectori pentru preț (Auto-wait activat)
             price_selectors = [
                 '#center_column .price', 
                 '.product-price',
@@ -59,14 +58,13 @@ def scrape_nordicamoto_search(product_code):
 
             price_element_locator = None
             for selector in price_selectors:
-                # Încercăm să găsim un locator
-                locator = page.locator(selector)
+                locator = page.locator(selector).first
                 if locator.count() > 0:
-                    price_element_locator = locator.first
+                    price_element_locator = locator
                     break
             
             if price_element_locator:
-                # Așteptăm ca elementul să fie vizibil și extragem textul
+                # Așteptăm ca elementul să aibă conținut text
                 price_text = price_element_locator.inner_text()
                 price_ron = clean_and_convert_price(price_text)
                 
@@ -81,4 +79,5 @@ def scrape_nordicamoto_search(product_code):
             print(f"❌ EROARE GENERALĂ Playwright (Nordicamoto): {e}")
             return None
         finally:
-            browser.close()
+            if browser:
+                browser.close()
