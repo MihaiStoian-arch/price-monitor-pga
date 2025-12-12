@@ -1,98 +1,78 @@
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import re
-import asyncio
-from pyppeteer import launch
-import time
+from bs4 import BeautifulSoup
 
+# Funcția de curățare rămâne neschimbată
 def clean_and_convert_price(price_text):
-    """Curăță textul prețului și îl convertește în float (gestionând formatele RON)."""
     if not price_text: return None
-    
     price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
     price_text = price_text.replace(' ', '')
     if price_text.count('.') > 0 and price_text.count(',') > 0: price_text = price_text.replace('.', '')
     cleaned_price_str = price_text.replace(',', '.')
     cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
-    
     try:
         if cleaned_price_str: return float(cleaned_price_str)
         return None
     except ValueError: return None
 
-# FUNCTIA WRAPPER
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT
 def scrape_moto24_search(product_code):
     """
-    Caută produsul pe Moto24, navighează pe pagina produsului și extrage prețul.
+    Caută produsul pe Moto24 (care ar trebui să redirecționeze direct la produs) și extrage prețul.
     """
-    if not product_code: return None
-    # URL CORECTAT V9
+    # URL CORECTAT V9 (deși Playwright ar trebui să gestioneze redirectul oricum)
     search_url = f"https://www.moto24.ro/module/wkelasticsearch/wkelasticsearchlist?s={product_code}"
-    try:
-        return asyncio.get_event_loop().run_until_complete(_scrape_moto24_async_search(search_url, product_code))
-    except Exception as e:
-        print(f"❌ EROARE GENERALĂ la Moto24 (Wrapper/Async): {e}")
-        return None
+    print(f"Încerc Playwright (Moto24) pentru căutarea codului: {product_code}")
+    
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Navighează la URL-ul de căutare; Playwright așteaptă automat redirectul.
+            page.goto(search_url, wait_until="domcontentloaded", timeout=40000)
+            
+            # Așteptăm 5 secunde suplimentare pentru finalizarea oricărui JS post-redirect
+            page.wait_for_timeout(5000)
 
-# FUNCTIA ASINCRONĂ PRINCIPALĂ (MOTO24 - Redirecționare directă)
-async def _scrape_moto24_async_search(search_url, product_code):
-    print(f"Încerc randarea JS (Moto24) pentru căutarea codului: {product_code}")
-    browser = None
-    try:
-        browser = await launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'] 
-        )
-        page = await browser.newPage()
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        
-        # PASUL 1: Navighează la URL-ul de căutare. Așteptăm 8 secunde pentru redirect
-        await page.goto(search_url, {'timeout': 40000, 'waitUntil': 'networkidle2'})
-        await asyncio.sleep(8) # Așteptăm mai mult pentru a prinde redirect-ul
+            # --- PASUL 1: VERIFICARE PAGINĂ ---
+            
+            # Verificăm dacă suntem pe o pagină goală
+            no_results = page.locator('.alert.alert-warning, .no-products').is_visible()
+            if no_results:
+                print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
+                return None
 
-        # Logica de verificare a paginii goale
-        no_results_found = await page.evaluate('''
-            () => {
-                const noResults = document.querySelector('.alert.alert-warning, .no-products, .no-results, .wk_search_list:empty'); 
-                return !!noResults;
-            }
-        ''')
-        
-        if no_results_found:
-            print(f"❌ PAGINĂ GOALĂ: Căutarea Moto24 pentru codul '{product_code}' nu a returnat produse.")
+            # --- PASUL 2: EXTRAGERE PREȚ (De pe URL-ul curent, post-redirect) ---
+
+            price_selectors = [
+                '#center_column .price',
+                '.product-price',
+                '.current-price',
+                '[itemprop="price"]', 
+            ]
+
+            price_element_locator = None
+            for selector in price_selectors:
+                locator = page.locator(selector)
+                if locator.count() > 0:
+                    price_element_locator = locator.first
+                    break
+            
+            if price_element_locator:
+                # Așteptăm ca elementul să fie vizibil și extragem textul
+                price_text = price_element_locator.inner_text()
+                price_ron = clean_and_convert_price(price_text)
+                
+                if price_ron is not None:
+                    print(f"      ✅ Preț Moto24 extras: {price_ron} RON")
+                    return price_ron
+                
+            print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Moto24.")
             return None
 
-        # Dacă am ajuns aici, suntem pe pagina produsului (sau o pagină cu conținut). Extragem prețul.
-        content = await page.content()
-        soup = BeautifulSoup(content, 'html.parser')
-
-        price_selectors = [
-            '#center_column .price', # Selector specific zonei de preț PrestaShop
-            '.price .current-price', # Un alt selector comun
-            '.summary .price .price-actual', 
-            '.summary .woocommerce-Price-amount', 
-            '.price ins .amount', 
-            'p.price', 
-            '.summary .price',
-            '[itemprop="price"]', 
-        ]
-        
-        price_element = None
-        for selector in price_selectors:
-            price_element = soup.select_one(selector)
-            if price_element:
-                break
-                
-        if price_element:
-            price_text = price_element.get_text(strip=True)
-            price_ron = clean_and_convert_price(price_text)
-            
-            if price_ron is not None:
-                print(f"      ✅ Preț RON extras (Moto24/Redirecționare): {price_ron} RON")
-                return price_ron
-            
-        print(f"❌ EROARE: Elementul de preț nu a fost găsit pe pagina produsului Moto24.")
-        return None
-
-    finally:
-        if browser:
-            await browser.close()
+        except Exception as e:
+            print(f"❌ EROARE GENERALĂ Playwright (Moto24): {e}")
+            return None
+        finally:
+            browser.close()
