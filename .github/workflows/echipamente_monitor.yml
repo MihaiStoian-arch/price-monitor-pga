@@ -11,6 +11,9 @@ jobs:
   run_scraper:
     runs-on: ubuntu-latest
 
+    env:
+      GSPREAD_SA_CREDENTIALS: ${{ secrets.GSPREAD_SA_CREDENTIALS }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
