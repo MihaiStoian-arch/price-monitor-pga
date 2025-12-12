@@ -1,10 +1,10 @@
 from playwright.sync_api import sync_playwright
 
-# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V24 - FINALIZARE)
+# FUNCTIA PRINCIPALĂ CU PLAYWRIGHT (V25 - EXTRAGERE BRUTE FORCE)
 def scrape_moto24_search(product_code, clean_and_convert_price):
     """
-    Cauta produsul pe Moto24 si extrage prețul.
-    Strategie optimizată pentru a gestiona timeout-urile și extragerea valorilor complete.
+    Caută produsul pe Moto24 și extrage prețul.
+    Strategie finală: Așteptare generică + extragere din cel mai larg container de preț.
     """
     search_url = f"https://www.moto24.ro/module/wkelasticsearch/wkelasticsearchlist?s={product_code}"
     print(f"Încerc Playwright (Moto24) pentru căutarea codului: {product_code}")
@@ -19,11 +19,13 @@ def scrape_moto24_search(product_code, clean_and_convert_price):
             # Navighează la URL-ul de căutare
             page.goto(search_url, wait_until="load", timeout=40000)
             
-            # 1. ELIMINAREA BLOCULUI DE WAIT_FOR_SELECTOR
-            # Ne bazăm pe faptul că page.goto așteaptă suficient și trecem direct la locator.
-            
-            # Așteptăm doar o fracțiune de secundă (simulare input uman)
-            page.wait_for_timeout(500) 
+            # --- 1. AȘTEPTARE ROBUSTĂ ---
+            # Așteptăm titlul paginii de produs, care ar trebui să apară înainte de preț.
+            try:
+                page.wait_for_selector('#product_info, h1.product-title', state="visible", timeout=15000) 
+                print("    ✅ Pagina de produs este randată (Așteptare după titlu).")
+            except:
+                print(f"    ⚠️ Timp de așteptare pentru titlu expirat (15s), continuăm cu extragerea.")
 
             # --- PASUL 2: VERIFICARE PAGINĂ ȘI EXTRAGERE PREȚ ---
             
@@ -35,17 +37,19 @@ def scrape_moto24_search(product_code, clean_and_convert_price):
             price_text = None
             price_ron = None
 
-            # STRATEGIA A (Nouă, Forțată): Extragem textul din cel mai larg container de preț.
-            # Aceasta ar trebui să ne ofere tot textul, de exemplu: "2 947,00 Lei"
-            price_container_locator = page.locator('#product-prices, .product-prices').first
+            # STRATEGIA A (Extragere Brute Force): Extragem textul din cel mai larg container de preț (CSS + ID).
+            # Acesta ar trebui să cuprindă atât prețul normal, cât și pe cel promoțional.
+            price_container_locator = page.locator('#product-prices, .product-prices, .price-main').first
             
             if price_container_locator.count() > 0:
-                price_text = price_container_locator.inner_text().strip()
+                # Folosim text_content() pentru a prinde tot textul, inclusiv din sub-elemente
+                price_text = price_container_locator.text_content().strip()
 
-            # STRATEGIA B (Fallback): Dacă nu găsim prețul complet, încercăm valoarea brută din itemprop
+            # STRATEGIA B (Fallback Metada/Itemprop)
             if price_text is None or len(price_text) < 3:
                 locator_price_content = page.locator('[itemprop="price"]').first
                 if locator_price_content.count() > 0:
+                    # Preferăm valoarea din atributul content (dacă există)
                     price_content_attr = locator_price_content.get_attribute('content')
                     if price_content_attr:
                         price_text = price_content_attr
@@ -56,13 +60,11 @@ def scrape_moto24_search(product_code, clean_and_convert_price):
                 price_ron = clean_and_convert_price(price_text)
                 
                 if price_ron is not None:
-                    # Pragul rămâne la 50 RON pentru a filtra erorile de tip 2.947 (care e acum un float)
+                    # Pragul de 50 RON ramane pentru a filtra valorile eronate de tip 2.947
                     if price_ron >= 50: 
                         print(f"      ✅ Preț Moto24 extras: {price_ron:.2f} RON (Din text: '{price_text}')")
                         return price_ron
                     else:
-                         # Acum știm că 2.947 RON era o valoare parțială, dar convertită corect la 2.947
-                         # Nu ne mai bazăm pe ea, ci pe valoarea completă.
                          print(f"      ⚠️ Preț sub prag ({price_ron:.3f} RON). Extragerea prețului complet a eșuat.")
                          return None
                 
