@@ -141,16 +141,16 @@ def send_alert_email(subject, body):
     try:
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
-        msg['To'] = RECEIVER_EMAIL
+        msg['To'] = RECEIVER_EMAILS
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html')) 
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SENDER_EMAIL, SMTP_PASSWORD) 
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAILS, msg.as_string())
         server.quit()
-        print(f"✔️ Notificare trimisă cu succes către {RECEIVER_EMAIL}")
+        print(f"✔️ Notificare trimisă cu succes către {RECEIVER_EMAILS}")
         return True
     except Exception as e:
         print(f"❌ Eroare la trimiterea email-ului: {e}")
