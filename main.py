@@ -11,14 +11,14 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# ⚠️ IMPORTĂRILE CORECTATE PENTRU FUNCȚIILE DE SCRAPING
+# ⚠️ IMPORTĂRILE FUNCȚIILOR DE SCRAPING
 from monitor.sites.nordicamoto import scrape_nordicamoto_search
-from monitor.sites.moto24 import scrape_moto24_search # Corectat: _search
+from monitor.sites.moto24 import scrape_moto24_search 
 
-# --- CONFIGURARE EMAIL (VERIFICAȚI DACA SUNT VALIDE) ---
+# --- CONFIGURARE EMAIL ---
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
 RECEIVER_EMAIL = 'octavian@atvrom.ro'
-# ATENȚIE: Setați acest secret ca variabilă de mediu în GitHub Actions
+# ATENȚIE: SMTP_PASSWORD ar trebui setat ca variabilă de mediu în GitHub Actions
 SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', 'igcu wwbs abit ganm') 
 SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 587
@@ -28,7 +28,7 @@ SMTP_PORT = 587
 MINIMUM_DIFFERENCE_THRESHOLD = 1.0
 
 # ----------------------------------------------------
-## 1. ⚙️ Configurare Globală și Harta de Coordonate (ADAPTATĂ LA 'Echipamente HJC')
+## 1. ⚙️ Configurare Globală și Harta de Coordonate 
 
 # --- Foaia de Calcul ---
 SPREADSHEET_NAME = 'Price Monitor ATVRom'
@@ -39,11 +39,9 @@ WORKSHEET_NAME = 'Echipamente HJC'
 # D=4 (Preț Moto24), E=5 (Preț Nordicamoto), F=6 (Data Scrape)
 # G=7 (Diferența Moto24), H=8 (Diferența Nordicamoto)
 
-# Harta: { Index Coloană Sursă (Cod Produs - B): [Index Coloană Destinație (Preț), Funcție Scraper] }
+# Harta: Folosim doar pentru referință, nu pentru preluarea funcțiilor (pentru a evita IndexError)
 SCRAPER_COORDS = {
-    # Citește Codul din B (2) și scrie în D (4)
-    2: [4, scrape_moto24_search],        # B -> D (Moto24) ⬅️ COREECTAT
-    # Citește Codul din B (2) și scrie în E (5)
+    2: [4, scrape_moto24_search],        # B -> D (Moto24) 
     2: [5, scrape_nordicamoto_search], # B -> E (Nordicamoto) 
 }
 
@@ -153,7 +151,6 @@ def send_alert_email(subject, body):
 
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
-        # Folosim SMTP_PASSWORD (preluat din variabila de mediu, de preferat)
         server.login(SENDER_EMAIL, SMTP_PASSWORD) 
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
@@ -175,7 +172,6 @@ def send_price_alerts(sheet):
     print("\n--- 3. Verificare Alerte (Citire Coloane G și H) ---")
     try:
         # Citim toate datele necesare (A-H). Presupunem că citim până la H (index 7)
-        # Atenție: Citirea se face cu get_all_values() pentru a prelua valorile calculate
         all_data = sheet.get_all_values()[1:] 
     except Exception as e:
         print(f"❌ Eroare la citirea datelor pentru alertă: {e}")
@@ -282,11 +278,10 @@ def monitor_and_update_sheet(sheet):
 
         print(f"\n➡️ Procesează: Codul {product_code} la rândul {gsheet_row_num}")
         
-        # Obținem cele două funcții de scraping din harta SCRAPER_COORDS
-        # 2: [4, scrape_moto24_search], 2: [5, scrape_nordicamoto_search]
+        # ⬅️ CORECTAT: Preluarea funcțiilor de scraping direct
         scraper_info = [
-            (SCRAPER_COORDS[2][1], 4), # Moto24 (index 4 = Coloana D)
-            (SCRAPER_COORDS[2][2], 5)  # Nordicamoto (index 5 = Coloana E)
+            (scrape_moto24_search, 4),      # Moto24 (Coloana D)
+            (scrape_nordicamoto_search, 5)  # Nordicamoto (Coloana E)
         ]
         
         row_updates = [None] * 2
@@ -297,7 +292,7 @@ def monitor_and_update_sheet(sheet):
             
             print(f"  - Scrapează {site_name}...")
             try:
-                # Apelăm funcția de scraping cu codul de produs
+                # Apelăm funcția de scraping
                 price_float = scraper_func(product_code) 
                 
                 if price_float is not None:
@@ -362,6 +357,6 @@ if __name__ == "__main__":
         monitor_and_update_sheet(sheet_client)
         
         # 3. Odată ce foaia este actualizată, rulează logica de alertare (G, H)
-        # Pauză pentru a permite formulelor G și H să se recalculeze în Sheets
+        # Pauză de 5 secunde pentru a permite formulelor G și H să se recalculeze în Sheets
         time.sleep(5) 
         send_price_alerts(sheet_client)
