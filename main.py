@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 
 # ⚠️ Importurile pentru funcțiile de scraping (Asigură-te că monitor/sites există)
 from monitor.sites.nordicamoto import scrape_nordicamoto_search
-from monitor.sites.moto24 import scrape_moto24
+from monitor.sites.moto24 import scrape_moto24_search
 
 # --- CONFIGURARE EMAIL (VERIFICAȚI DACA SUNT VALIDE) ---
 SENDER_EMAIL = 'mihaistoian889@gmail.com'
@@ -41,7 +41,7 @@ WORKSHEET_NAME = 'Echipamente HJC' # NOU
 # Harta: { Index Coloană Sursă (Cod Produs - B): [Index Coloană Destinație (Preț), Funcție Scraper] }
 SCRAPER_COORDS = {
     # Citește Codul din B (2) și scrie în D (4)
-    2: [4, scrape_moto24],        # B -> D (Moto24) 
+    2: [4, scrape_moto24_search],        # B -> D (Moto24) 
     # Citește Codul din B (2) și scrie în E (5)
     2: [5, scrape_nordicamoto_search], # B -> E (Nordicamoto) 
 }
