@@ -2,18 +2,6 @@ from playwright.sync_api import sync_playwright
 import re
 from bs4 import BeautifulSoup
 
-# Funcția de curățare rămâne neschimbată
-def clean_and_convert_price(price_text):
-    if not price_text: return None
-    price_text = price_text.upper().replace('LEI', '').replace('RON', '').replace('&NBSP;', '').strip()
-    price_text = price_text.replace(' ', '')
-    if price_text.count('.') > 0 and price_text.count(',') > 0: price_text = price_text.replace('.', '')
-    cleaned_price_str = price_text.replace(',', '.')
-    cleaned_price_str = re.sub(r'[^\d.]', '', cleaned_price_str)
-    try:
-        if cleaned_price_str: return float(cleaned_price_str)
-        return None
-    except ValueError: return None
 
 # FUNCTIA PRINCIPALĂ CU PLAYWRIGHT
 def scrape_nordicamoto_search(product_code):
