@@ -1,6 +1,6 @@
 name: Monitorizare Prețuri Echipamente Moto
 
-on:
+#on:
   # Rulează manual din interfața GitHub Actions
   workflow_dispatch:
   # Rulează zilnic la ora 08:00 UTC (ora României, 10:00/11:00)
